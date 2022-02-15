@@ -1,1 +1,1 @@
-# DELUSioN: DEep Learning on a cUbed Sphere for NWP
+# DELUSioN: DEep Learning on a cUbe Sphere for NWP
