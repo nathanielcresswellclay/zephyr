@@ -10,6 +10,7 @@ _recursive_: false
 input_time_dim: ${data.input_time_dim}
 output_time_dim: ${data.output_time_dim}
 cube_dim: ${data.cube_dim}
+batch_size: ${batch_size}
 
 # Parameters automatically overridden in train code
 # input_channels

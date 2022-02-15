@@ -61,7 +61,7 @@ class BaseModel(pl.LightningModule, ABC):
         inputs, targets = batch
         outputs = self(inputs)
         loss = self.loss(outputs, targets)
-        self.log('loss', loss)
+        self.log('loss', loss, sync_dist=True, batch_size=self.batch_size)
 
         for m, metric in self.metrics.items():
             self.log(f'val_{m}', metric(outputs, targets), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
