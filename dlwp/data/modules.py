@@ -1,9 +1,10 @@
 # System modules
 import logging
 from abc import ABC
-from typing import Optional, Union, Sequence, DefaultDict
+from typing import Optional, Union, Sequence
 
 # External modules
+from omegaconf import DictConfig
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
@@ -17,16 +18,16 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
     def __init__(
             self,
             directory: str = '.',
-            prefix: Union[None, str] = None,
-            suffix: Union[None, str] = None,
+            prefix: Optional[str] = None,
+            suffix: Optional[str] = None,
             data_format: str = 'classic',
             batch_size: int = 32,
             drop_last: bool = False,
-            input_variables: Union[None, Sequence] = None,
-            output_variables: Union[None, Sequence] = None,
-            constants: Union[None, DefaultDict] = None,
-            scaling: Union[None, DefaultDict] = None,
-            splits: Union[None, DefaultDict] = None,
+            input_variables: Optional[Sequence] = None,
+            output_variables: Optional[Sequence] = None,
+            constants: Optional[DictConfig] = None,
+            scaling: Optional[DictConfig] = None,
+            splits: Optional[DictConfig] = None,
             input_time_dim: int = 1,
             output_time_dim: int = 1,
             data_time_step: Union[int, str] = '3H',
@@ -38,6 +39,39 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
             num_workers: int = 4,
             pin_memory: bool = True
     ):
+        """
+        pytorch-lightning module for complete model train, validation, and test data loading. Uses
+        dlwp.data.data_loading.TimeSeriesDataset under-the-hood. Loaded data files follow the naming scheme
+            {directory}/{prefix}{variable/constant}{suffix}{[.nc, .zarr]}
+
+        :param directory: directory containing data files
+        :param prefix: prefix appended to all data files
+        :param suffix: suffix appended to all data files
+        :param data_format: currently only 'classic' is allowed.
+            'classic': use classic DLWP file types. Loads .nc files, assuming dimensions [sample, varlev, face, height,
+                width] and data variables 'predictors', 'lat', and 'lon'.
+        :param batch_size: size of batches to draw from data
+        :param drop_last: whether to drop the last batch if it is smaller than batch_size
+        :param input_variables: list of input variable names, to be found in data file name
+        :param output_variables: list of output variables names. If None, defaults to `input_variables`.
+        :param constants: dictionary with {key: value} corresponding to {constant_name: variable name in file}.
+        :param scaling: dictionary containing scaling parameters for data variables
+        :param splits: dictionary with train/validation/test set start/end dates. If not provided, loads the entire
+            data time series as the test set.
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param data_time_step: either integer hours or a str interpretable by pandas: time between steps in the
+            original data time series
+        :param time_step: either integer hours or a str interpretable by pandas: desired time between effective model
+            time steps
+        :param gap: either integer hours or a str interpretable by pandas: time step between the last input time and
+            the first output time. Defaults to `time_step`.
+        :param shuffle: option to shuffle the training data
+        :param add_insolation: option to add prescribed insolation as a decoder input feature
+        :param cube_dim: number of points on the side of a cube face. Not currently used.
+        :param num_workers: number of parallel data loading workers
+        :param pin_memory: enable pytorch's memory pinning for faster GPU I/O
+        """
         super().__init__()
         self.directory = directory
         self.prefix = prefix

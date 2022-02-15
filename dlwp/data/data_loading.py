@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import DefaultDict, Sequence, Union
+from typing import DefaultDict, Optional, Sequence, Union
 
 from omegaconf import DictConfig, OmegaConf
 import numpy as np
@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 def open_time_series_dataset_classic(
         directory: str,
         input_variables: Sequence,
-        output_variables: Union[Sequence, None],
-        constants: Union[DefaultDict, None] = None,
-        prefix: Union[str, None] = None,
-        suffix: Union[str, None] = None,
+        output_variables: Optional[Sequence],
+        constants: Optional[DefaultDict] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
         batch_size: int = 32,
 ) -> xr.Dataset:
     output_variables = output_variables or input_variables
@@ -85,7 +85,7 @@ class TimeSeriesDataset(Dataset):
     def __init__(
             self,
             dataset: xr.Dataset,
-            scaling: DefaultDict,
+            scaling: DictConfig,
             input_time_dim: int = 1,
             output_time_dim: int = 1,
             data_time_step: Union[int, str] = '3H',
@@ -95,6 +95,23 @@ class TimeSeriesDataset(Dataset):
             drop_last: bool = False,
             add_insolation: bool = False
     ):
+        """
+        Dataset for sampling from continuous time-series data, compatible with pytorch data loading.
+
+        :param dataset: xarray Dataset produced by one of the `open_*` methods herein
+        :param scaling: dictionary containing scaling parameters for data variables
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param data_time_step: either integer hours or a str interpretable by pandas: time between steps in the
+            original data time series
+        :param time_step: either integer hours or a str interpretable by pandas: desired time between effective model
+            time steps
+        :param gap: either integer hours or a str interpretable by pandas: time step between the last input time and
+            the first output time. Defaults to `time_step`.
+        :param batch_size: batch size
+        :param drop_last: whether to drop the last batch if it is smaller than batch_size
+        :param add_insolation: option to add prescribed insolation as a decoder input feature
+        """
         self.ds = dataset
         self.scaling = OmegaConf.to_object(scaling)
         self.input_time_dim = input_time_dim

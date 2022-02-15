@@ -1,6 +1,6 @@
 from abc import ABC
 import logging
-from typing import Any, Dict, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -19,7 +19,7 @@ class CubeSphereUnet(BaseModel, ABC):
             encoder: DictConfig,
             decoder: DictConfig,
             optimizer: DictConfig,
-            scheduler: DictConfig,
+            scheduler: Optional[DictConfig],
             loss: DictConfig,
             input_channels: int,
             output_channels: int,
@@ -28,8 +28,30 @@ class CubeSphereUnet(BaseModel, ABC):
             input_time_dim: int,
             output_time_dim: int,
             cube_dim: int = 64,
+            batch_size: Optional[int] = None
     ):
-        super().__init__(loss)
+        """
+        Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
+        cube sphere grid.
+
+        :param encoder: dictionary of instantiable parameters for the U-net encoder (see UnetEncoder docs)
+        :param decoder: dictionary of instantiable parameters for the U-net decoder (see UnetDecoder docs)
+        :param optimizer: dictionary of instantiable parameters for the model optimizer
+        :param scheduler: dictionary of instantiable parameters for optimizer scheduler
+        :param loss: dictionary of instantiable parameters for the model loss function
+        :param input_channels: number of input channels expected in the input array schema. Note this should be the
+            number of input variables in the data, NOT including data reshaping for the encoder part.
+        :param output_channels: number of output channels expected in the output array schema, or output variables
+        :param n_constants: number of optional constants expected in the input arrays. If this is zero, no constants
+            should be provided as inputs to `forward`.
+        :param decoder_input_channels: number of optional prescribed variables expected in the decoder input array
+            for both inputs and outputs. If this is zero, no decoder inputs should be provided as inputs to `forward`.
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param cube_dim: number of points on the side of a cube face. Not currently used.
+        :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
+        """
+        super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
         self.scheduler_cfg = scheduler
         self.input_channels = input_channels
@@ -172,7 +194,7 @@ class UnetEncoder(torch.nn.Module):
             kernel_size: int = 3,
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
-            activation: Union[DictConfig, None] = None,
+            activation: Optional[DictConfig] = None,
             add_polar_layer: bool = True,
             flip_north_pole: bool = True
     ):
@@ -238,7 +260,7 @@ class UnetDecoder(torch.nn.Module):
             kernel_size: int = 3,
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
-            activation: Union[DictConfig, None] = None,
+            activation: Optional[DictConfig] = None,
             add_polar_layer: bool = True,
             flip_north_pole: bool = True
     ):
