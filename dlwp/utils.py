@@ -7,6 +7,25 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def configure_logging(verbose=2):
+    verbose_levels = {
+        0: logging.WARNING,
+        1: logging.INFO,
+        2: logging.DEBUG,
+        3: logging.NOTSET
+    }
+    if verbose not in verbose_levels.keys():
+        verbose = 1
+    logger = logging.getLogger()
+    logger.setLevel(verbose_levels[verbose])
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "[%(asctime)s][PID=%(process)d]"
+        "[%(levelname)s %(filename)s:%(lineno)d] - %(message)s"))
+    handler.setLevel(verbose_levels[verbose])
+    logger.addHandler(handler)
+
+
 def remove_chars(s):
     """
     Remove characters from a string that have unintended effects on file paths.

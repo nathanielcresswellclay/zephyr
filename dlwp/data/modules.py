@@ -37,7 +37,8 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
             add_insolation: bool = False,
             cube_dim: int = 64,
             num_workers: int = 4,
-            pin_memory: bool = True
+            pin_memory: bool = True,
+            forecast_init_times: Optional[Sequence] = None
     ):
         """
         pytorch-lightning module for complete model train, validation, and test data loading. Uses
@@ -71,6 +72,11 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
         :param cube_dim: number of points on the side of a cube face. Not currently used.
         :param num_workers: number of parallel data loading workers
         :param pin_memory: enable pytorch's memory pinning for faster GPU I/O
+        :param forecast_init_times: a Sequence of pandas Timestamps dictating the specific initialization times
+            to produce inputs for. Note that
+                - this is only applied to the test dataloader
+                - providing this parameter configures the data loader to only produce this number of samples, and
+                    NOT produce any target array.
         """
         super().__init__()
         self.directory = directory
@@ -94,6 +100,7 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
         self.cube_dim = cube_dim
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.forecast_init_times = forecast_init_times
 
         self.train_dataset = None
         self.val_dataset = None
@@ -147,7 +154,8 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
                 gap=self.gap,
                 batch_size=self.batch_size,
                 drop_last=False,
-                add_insolation=self.add_insolation
+                add_insolation=self.add_insolation,
+                forecast_init_times=self.forecast_init_times
             )
         else:
             self.test_dataset = TimeSeriesDataset(
@@ -160,7 +168,8 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
                 gap=self.gap,
                 batch_size=self.batch_size,
                 drop_last=False,
-                add_insolation=self.add_insolation
+                add_insolation=self.add_insolation,
+                forecast_init_times=self.forecast_init_times
             )
 
     def train_dataloader(self) -> DataLoader:

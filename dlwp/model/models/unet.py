@@ -87,7 +87,6 @@ class CubeSphereUnet(BaseModel, ABC):
         if not self.is_diagnostic and (self.output_time_dim % self.input_time_dim != 0):
             raise ValueError(f"'output_time_dim' must be a multiple of 'input_time_dim' (got "
                              f"{self.output_time_dim} and {self.input_time_dim})")
-        self.integration_steps = self.output_time_dim // self.input_time_dim
 
         # Build the model layers
         self.encoder = instantiate(encoder, input_channels=self._compute_input_channels())
@@ -98,6 +97,10 @@ class CubeSphereUnet(BaseModel, ABC):
         self.save_hyperparameters()
 
         self.configure_metrics()
+
+    @property
+    def integration_steps(self):
+        return self.output_time_dim // self.input_time_dim
 
     def configure_metrics(self):
         """

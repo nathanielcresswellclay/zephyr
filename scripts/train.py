@@ -14,6 +14,10 @@ logging.getLogger('matplotlib').setLevel(logging.ERROR)
 def train(cfg):
     logger.info(f"experiment working directory: {os.getcwd()}")
 
+    # Seed
+    if cfg.seed is not None:
+        pl.seed_everything(cfg.seed)
+
     # Data module
     data_module = instantiate(cfg.data.module)
 
