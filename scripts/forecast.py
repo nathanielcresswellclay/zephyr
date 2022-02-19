@@ -72,7 +72,7 @@ def inference(args: argparse.Namespace):
     checkpoint = os.path.join(args.model_path, 'tensorboard', model_name, f'version_{args.model_version}',
                               'checkpoints', args.model_checkpoint)
     logger.info(f"load model checkpoint {checkpoint}")
-    model = model.load_from_checkpoint(checkpoint, map_location=device,  output_time_dim=output_time_dim)
+    model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim)
     model = model.to(device)
 
     # Allocate giant array. One extra time step for the init state.

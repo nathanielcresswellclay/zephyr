@@ -13,7 +13,6 @@ input_variables:
   - t2m0
   - tcwv0
   - t850
-  - z250
 output_variables: null
 constants:
   land_sea_mask: lsm
