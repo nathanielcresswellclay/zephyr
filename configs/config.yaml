@@ -4,6 +4,7 @@ defaults:
       - early_stopping
       - learning_rate_monitor
       - model_checkpoint
+      - progress_bar
   - data: era5_cs64_7var_6h_24h
   - logger: tensorboard
   - model: cube_sphere_unet

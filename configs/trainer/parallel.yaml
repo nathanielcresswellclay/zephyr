@@ -1,15 +1,11 @@
 _target_: pytorch_lightning.Trainer
 _recursive_: true
 benchmark: false
-checkpoint_callback: true
-deterministic: true
-flush_logs_every_n_steps: 100
+deterministic: false
 gpus: 2
 log_every_n_steps: 10
 max_epochs: 500
 min_epochs: 100
-progress_bar_refresh_rate: 1
-stochastic_weight_avg: false
 strategy:
   _target_: pytorch_lightning.plugins.DDPPlugin
   find_unused_parameters: false
