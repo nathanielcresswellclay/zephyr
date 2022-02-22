@@ -35,6 +35,13 @@ def get_forecast_dates(start, end, freq):
     return dates
 
 
+def get_latest_version(directory):
+    all_versions = [os.path.join(directory, v) for v in os.listdir(directory)]
+    all_versions = [v for v in all_versions if os.path.isdir(v)]
+    latest_version = max(all_versions, key=os.path.getmtime)
+    return Path(latest_version).name
+
+
 def inference(args: argparse.Namespace):
     forecast_dates = get_forecast_dates(args.forecast_init_start, args.forecast_init_end, args.freq)
     os.makedirs(args.output_directory, exist_ok=True)
@@ -67,10 +74,14 @@ def inference(args: argparse.Namespace):
     loader = data_module.test_dataloader()
 
     # Load the model checkpoint. Set output_time_dim param override.
-    model_name = Path(args.model_path).name
     model = instantiate(cfg.model)
-    checkpoint = os.path.join(args.model_path, 'tensorboard', model_name, f'version_{args.model_version}',
-                              'checkpoints', args.model_checkpoint)
+    model_name = Path(args.model_path).name
+    version_directory = os.path.join(args.model_path, 'tensorboard', model_name)
+    if args.model_version is None:
+        model_version = get_latest_version(version_directory)
+    else:
+        model_version = f'version_{args.model_version}'
+    checkpoint = os.path.join(version_directory, model_version, 'checkpoints', args.model_checkpoint)
     logger.info(f"load model checkpoint {checkpoint}")
     model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim)
     model = model.to(device)
@@ -142,9 +153,9 @@ if __name__ == '__main__':
                         help="Path to model training outputs directory")
     parser.add_argument('-c', '--model-checkpoint', type=str, default='last.ckpt',
                         help="Model checkpoint file name")
-    parser.add_argument('--model-version', default=0, type=int,
-                        help="Model version. Should usually be 0 unless an explicit re-start in the same output "
-                             "directory was made.")
+    parser.add_argument('--model-version', default=None, type=int,
+                        help="Model version. Defaults to using the latest available version unless a specific integer "
+                             "version number is specified.")
     parser.add_argument('-l', '--lead-time', type=int, default=168,
                         help="Maximum forecast lead time to predict, in integer hours")
     parser.add_argument('-s', '--forecast-init-start', type=str, default='2017-01-02',
@@ -164,11 +175,9 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--data-directory', type=str, default=None,
                         help="Path to test data, if different from files used for model training")
     parser.add_argument('--data-prefix', type=str, default=None,
-                        help="Prefix for test data files. "
-                             "Assumes files of naming scheme {prefix}{var}_{lead}h{suffix}.zarr")
+                        help="Prefix for test data files")
     parser.add_argument('--data-suffix', type=str, default=None,
-                        help="Suffix for test data files. "
-                             "Assumes files of naming scheme {prefix}{var}_{lead}h{suffix}.zarr")
+                        help="Suffix for test data files")
 
     configure_logging()
     run_args = parser.parse_args()
