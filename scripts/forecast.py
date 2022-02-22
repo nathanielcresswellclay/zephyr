@@ -113,12 +113,18 @@ def inference(args: argparse.Namespace):
     # Re-scale prediction
     prediction_da[:] *= data_module.test_dataset.target_scaling['std']
     prediction_da[:] += data_module.test_dataset.target_scaling['mean']
+    prediction_ds = prediction_da.to_dataset(dim='channel_out')
+    for variable in prediction_ds.data_vars:
+        if cfg.data.scaling[variable].get('log_epsilon', None) is not None:
+            prediction_ds[variable] = np.exp(
+                prediction_ds[variable] + np.log(cfg.data.scaling[variable]['log_epsilon'])
+            ) - cfg.data.scaling[variable]['log_epsilon']
 
     # Export dataset
     write_time = time.time()
-    prediction_ds = prediction_da.to_dataset(dim='channel_out')
-    prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
     prediction_ds = to_chunked_dataset(prediction_ds, {'time': 1})
+    if args.encode_int:
+        prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
 
     output_file = os.path.join(args.output_directory,
                                f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
@@ -151,6 +157,8 @@ if __name__ == '__main__':
                              "Otherwise, interpretable by pandas.")
     parser.add_argument('-o', '--output-directory', type=str, default='.',
                         help="Directory in which to save output forecast")
+    parser.add_argument('--encode-int', action='store_true',
+                        help="Encode data variables as int16 type (may not be compatible with tempest-remap)")
     parser.add_argument('--to-zarr', action='store_true',
                         help="Export data in zarr format")
     parser.add_argument('-d', '--data-directory', type=str, default=None,

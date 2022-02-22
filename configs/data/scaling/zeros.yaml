@@ -19,3 +19,7 @@ t850:
 z250:
   mean: 0.
   std: 1.
+tp6:
+  mean: 0.
+  std: 1.
+  log_epsilon: 1e-6

@@ -61,9 +61,11 @@ class CubeSphereUnet(BaseModel, ABC):
         self.input_time_dim = input_time_dim
         self.output_time_dim = output_time_dim
 
-        if self.output_time_dim % self.input_time_dim != 0:
-            raise ValueError(f"'output_time_dim' must be a multiple of 'input_time_dim "
-                             f"(got {self.output_time_dim} and {self.input_time_dim}")
+        # Number of passes through the model, or a diagnostic model with only one output time
+        self.is_diagnostic = self.output_time_dim == 1 and self.input_time_dim > 1
+        if not self.is_diagnostic and (self.output_time_dim % self.input_time_dim != 0):
+            raise ValueError(f"'output_time_dim' must be a multiple of 'input_time_dim' (got "
+                             f"{self.output_time_dim} and {self.input_time_dim})")
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -82,12 +84,6 @@ class CubeSphereUnet(BaseModel, ABC):
         # Wrap in list so that Lightning interprets it correctly as a single arg to `forward`
         self.example_input_array = [example_input_array]
 
-        # Number of passes through the model, or a diagnostic model with only one output time
-        self.is_diagnostic = self.output_time_dim == 1 and self.input_time_dim > 1
-        if not self.is_diagnostic and (self.output_time_dim % self.input_time_dim != 0):
-            raise ValueError(f"'output_time_dim' must be a multiple of 'input_time_dim' (got "
-                             f"{self.output_time_dim} and {self.input_time_dim})")
-
         # Build the model layers
         self.encoder = instantiate(encoder, input_channels=self._compute_input_channels())
         self.encoder_depth = len(self.encoder.n_channels)
@@ -100,7 +96,7 @@ class CubeSphereUnet(BaseModel, ABC):
 
     @property
     def integration_steps(self):
-        return self.output_time_dim // self.input_time_dim
+        return max(self.output_time_dim // self.input_time_dim, 1)
 
     def configure_metrics(self):
         """
@@ -138,14 +134,15 @@ class CubeSphereUnet(BaseModel, ABC):
         return self.input_time_dim * (self.input_channels + self.decoder_input_channels) + self.n_constants
 
     def _compute_output_channels(self) -> int:
-        return self.input_time_dim * self.output_channels
+        return (1 if self.is_diagnostic else self.input_time_dim) * self.output_channels
 
     def _reshape_inputs(self, inputs: Sequence, step: int = 0) -> torch.Tensor:
         """
         Returns a single tensor to pass into the model encoder/decoder. Squashes the time/channel dimension and
         concatenates in constants and decoder inputs.
-        :param inputs:
-        :return:
+        :param inputs: list of expected input tensors (inputs, decoder_inputs, constants)
+        :param step: step number in the sequence of integration_steps
+        :return: reshaped Tensor in expected shape for model encoder
         """
         if not (self.n_constants > 0 or self.decoder_input_channels > 0):
             return inputs[0].flatten(start_dim=1, end_dim=2)

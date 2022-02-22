@@ -20,6 +20,7 @@ def train(cfg):
 
     # Data module
     data_module = instantiate(cfg.data.module)
+    data_module.setup()
 
     # Model
     input_channels = len(cfg.data.input_variables)

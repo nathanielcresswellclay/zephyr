@@ -115,7 +115,8 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
                 constants=self.constants,
                 prefix=self.prefix,
                 suffix=self.suffix,
-                batch_size=self.batch_size
+                batch_size=self.batch_size,
+                scaling=self.scaling
             )
         else:
             raise NotImplementedError

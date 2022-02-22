@@ -22,9 +22,10 @@ def open_time_series_dataset_classic(
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
         batch_size: int = 32,
+        scaling: Optional[DictConfig] = None
 ) -> xr.Dataset:
     output_variables = output_variables or input_variables
-    all_variables = np.intersect1d(input_variables, output_variables)
+    all_variables = np.union1d(input_variables, output_variables)
     prefix = prefix or ''
     suffix = suffix or ''
 
@@ -52,6 +53,10 @@ def open_time_series_dataset_classic(
             ds = ds.set_coords(['lat', 'lon'])
         except (ValueError, KeyError):
             pass
+        # Apply log scaling lazily
+        if variable in scaling and scaling[variable].get('log_epsilon', None) is not None:
+            ds[variable] = np.log(ds[variable] + scaling[variable]['log_epsilon']) \
+                           - np.log(scaling[variable]['log_epsilon'])
         datasets.append(ds)
     # Merge datasets
     data = xr.merge(datasets)
