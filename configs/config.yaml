@@ -11,6 +11,7 @@ defaults:
   - trainer: default
 
 experiment_name: ${now:%Y-%m-%d}_${now:%H-%M-%S}
+checkpoint_path: null
 seed: 42
 
 batch_size: 32

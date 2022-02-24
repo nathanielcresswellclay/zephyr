@@ -51,7 +51,7 @@ def train(cfg):
 
     # Trainer fit
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=training_logger)
-    trainer.fit(model=model, datamodule=data_module)
+    trainer.fit(model=model, datamodule=data_module, ckpt_path=cfg.get('checkpoint_path', None))
 
 
 if __name__ == '__main__':
