@@ -6,14 +6,13 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
 
-from dlwp.model.models.base import BaseModel
+from dlwp.model.models.base import BaseIterativeModel
 from dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
-from dlwp.model.losses import LossOnStep
 
 logger = logging.getLogger(__name__)
 
 
-class CubeSphereUnet(BaseModel, ABC):
+class CubeSphereUnet(BaseIterativeModel, ABC):
     def __init__(
             self,
             encoder: DictConfig,
@@ -51,38 +50,19 @@ class CubeSphereUnet(BaseModel, ABC):
         :param cube_dim: number of points on the side of a cube face. Not currently used.
         :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
         """
-        super().__init__(loss, batch_size=batch_size)
-        self.optimizer_cfg = optimizer
-        self.scheduler_cfg = scheduler
-        self.input_channels = input_channels
-        self.output_channels = output_channels
-        self.n_constants = n_constants
-        self.decoder_input_channels = decoder_input_channels
-        self.input_time_dim = input_time_dim
-        self.output_time_dim = output_time_dim
-
-        # Number of passes through the model, or a diagnostic model with only one output time
-        self.is_diagnostic = self.output_time_dim == 1 and self.input_time_dim > 1
-        if not self.is_diagnostic and (self.output_time_dim % self.input_time_dim != 0):
-            raise ValueError(f"'output_time_dim' must be a multiple of 'input_time_dim' (got "
-                             f"{self.output_time_dim} and {self.input_time_dim})")
-
-        # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
-        # inputs: [B, input_time_dim, input_channels, F, H, W]
-        # decoder_inputs: [B, input_time_dim + output_time_dim, decoder_input_channels, F, H, W]
-        # constants: [n_constants, F, H, W]
-        example_input_array = [torch.randn(1, self.input_time_dim, self.input_channels, 6, cube_dim, cube_dim)]
-        if self.decoder_input_channels > 0:
-            example_input_array.append(
-                torch.randn(1, self.input_time_dim + self.output_time_dim, self.decoder_input_channels,
-                            6, cube_dim, cube_dim)
-            )
-        if self.n_constants > 0:
-            example_input_array.append(
-                torch.randn(self.n_constants, 6, cube_dim, cube_dim)
-            )
-        # Wrap in list so that Lightning interprets it correctly as a single arg to `forward`
-        self.example_input_array = [example_input_array]
+        super().__init__(
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss=loss,
+            input_channels=input_channels,
+            output_channels=output_channels,
+            n_constants=n_constants,
+            decoder_input_channels=decoder_input_channels,
+            input_time_dim=input_time_dim,
+            output_time_dim=output_time_dim,
+            cube_dim=cube_dim,
+            batch_size=batch_size
+        )
 
         # Build the model layers
         self.encoder = instantiate(encoder, input_channels=self._compute_input_channels())
@@ -91,27 +71,6 @@ class CubeSphereUnet(BaseModel, ABC):
                                    output_channels=self._compute_output_channels())
 
         self.save_hyperparameters()
-
-        self.configure_metrics()
-
-    @property
-    def integration_steps(self):
-        return max(self.output_time_dim // self.input_time_dim, 1)
-
-    def configure_metrics(self):
-        """
-        Build the metrics dictionary.
-        """
-        metrics = {
-            'loss': instantiate(self.loss_cfg),
-            'mse': torch.nn.MSELoss(),
-            'mae': torch.nn.L1Loss()
-        }
-        for step in range(self.integration_steps):
-            metrics[f'loss_{step}'] = LossOnStep(metrics['loss'], self.input_time_dim, step)
-        self.metrics = torch.nn.ModuleDict(metrics)
-        self.loss = self.metrics['loss']
-
 
     def configure_optimizers(
             self
@@ -129,46 +88,6 @@ class CubeSphereUnet(BaseModel, ABC):
                 }
             }
         return optimizer
-
-    def _compute_input_channels(self) -> int:
-        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) + self.n_constants
-
-    def _compute_output_channels(self) -> int:
-        return (1 if self.is_diagnostic else self.input_time_dim) * self.output_channels
-
-    def _reshape_inputs(self, inputs: Sequence, step: int = 0) -> torch.Tensor:
-        """
-        Returns a single tensor to pass into the model encoder/decoder. Squashes the time/channel dimension and
-        concatenates in constants and decoder inputs.
-        :param inputs: list of expected input tensors (inputs, decoder_inputs, constants)
-        :param step: step number in the sequence of integration_steps
-        :return: reshaped Tensor in expected shape for model encoder
-        """
-        if not (self.n_constants > 0 or self.decoder_input_channels > 0):
-            return inputs[0].flatten(start_dim=1, end_dim=2)
-        elif self.n_constants == 0:
-            result = [
-                inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
-                inputs[1][:, slice(step * self.input_time_dim, (step + 1) * self.input_time_dim)].flatten(1, 2)  # DI
-            ]
-            return torch.cat(result, dim=1)
-        elif self.decoder_input_channels == 0:
-            result = [
-                inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
-                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
-            ]
-            return torch.cat(result, dim=1)
-        else:
-            result = [
-                inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
-                inputs[1][:, slice(step * self.input_time_dim, (step + 1) * self.input_time_dim)].flatten(1, 2),  # DI
-                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
-            ]
-            return torch.cat(result, dim=1)
-
-    def _reshape_outputs(self, outputs: torch.Tensor) -> torch.Tensor:
-        shape = tuple(outputs.shape)
-        return outputs.view(shape[0], 1 if self.is_diagnostic else self.input_time_dim, -1, *shape[2:])
 
     def forward(self, inputs: Sequence, output_only_last=False) -> torch.Tensor:
         outputs = []
