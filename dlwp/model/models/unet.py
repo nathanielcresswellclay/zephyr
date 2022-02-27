@@ -130,15 +130,15 @@ class CubeSphereUnet(BaseModel, ABC):
 
 class IterativeUnet(torch.nn.Module):
     def __init__(
-        self,
-        encoder: DictConfig,
-        decoder: DictConfig,
-        input_channels: int,
-        output_channels: int,
-        n_constants: int,
-        decoder_input_channels: int,
-        input_time_dim: int,
-        output_time_dim: int,
+            self,
+            encoder: DictConfig,
+            decoder: DictConfig,
+            input_channels: int,
+            output_channels: int,
+            n_constants: int,
+            decoder_input_channels: int,
+            input_time_dim: int,
+            output_time_dim: int,
     ):
         super().__init__()
         self.input_channels = input_channels

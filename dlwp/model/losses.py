@@ -1,4 +1,5 @@
 import torch
+from torch.nn import functional as F
 
 class LossOnStep(torch.nn.Module):
     """
@@ -11,3 +12,28 @@ class LossOnStep(torch.nn.Module):
 
     def forward(self, inputs, targets):
         return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice])
+
+
+class GeneratorLoss(torch.nn.Module):
+    def __init__(self, loss: torch.nn.Module, disc_score_weight: float):
+        super().__init__()
+        self.loss = loss
+        self.register_buffer('disc_score_weight', torch.tensor(disc_score_weight, dtype=torch.float32))
+
+    def forward(self, inputs, targets, disc_score):
+        return self.loss(inputs, targets) + self.disc_score_weight * disc_score
+
+
+def loss_hinge_disc(score_generated, score_real):
+    """Discriminator hinge loss."""
+    l1 = F.relu(1.0 - score_real)
+    loss = torch.mean(l1)
+    l2 = F.relu(1.0 + score_generated)
+    loss += torch.mean(l2)
+    return loss
+
+
+def loss_hinge_gen(score_generated):
+    """Generator hinge loss."""
+    loss = -torch.mean(score_generated)
+    return loss

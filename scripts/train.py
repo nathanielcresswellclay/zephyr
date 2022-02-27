@@ -34,6 +34,7 @@ def train(cfg):
         decoder_input_channels=decoder_input_channels
     )
     model.hparams['batch_size'] = cfg.batch_size
+    model.hparams['learning_rate'] = cfg.learning_rate
     print(pl.utilities.model_summary.summarize(model, max_depth=-1))
 
     # Callbacks for trainer

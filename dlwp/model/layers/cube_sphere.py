@@ -1,6 +1,7 @@
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
+from torch.nn.utils.parametrizations import spectral_norm
 
 
 class CubeSphereLayer(torch.nn.Module):
@@ -14,17 +15,24 @@ class CubeSphereLayer(torch.nn.Module):
             self,
             base_layer: DictConfig,
             add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            flip_north_pole: bool = True,
+            use_spectral_norm: bool = False
     ):
         super().__init__()
         self.add_polar_layer = add_polar_layer
         self.flip_north_pole = flip_north_pole
+        self.use_spectral_norm = use_spectral_norm
+
+        if self.use_spectral_norm:
+            func = spectral_norm
+        else:
+            func = lambda x: x
 
         if self.add_polar_layer:
-            self.add_module('equatorial', instantiate(base_layer))
-            self.add_module('polar', instantiate(base_layer))
+            self.add_module('equatorial', func(instantiate(base_layer)))
+            self.add_module('polar', func(instantiate(base_layer)))
         else:
-            self.add_module('primary', instantiate(base_layer))
+            self.add_module('primary', func(instantiate(base_layer)))
 
     def forward(self, inputs):
         results = []
