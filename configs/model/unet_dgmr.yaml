@@ -12,6 +12,7 @@ discriminator:
   num_layers: 3
   internal_channels: 8
   keep_time_dim: false
+  add_polar_layer: true
 input_time_dim: ${data.input_time_dim}
 output_time_dim: ${data.output_time_dim}
 cube_dim: ${data.cube_dim}

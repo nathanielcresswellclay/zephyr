@@ -215,7 +215,8 @@ class DBlock(torch.nn.Module):
             conv_type: str = "Conv2d",
             first_relu: bool = True,
             keep_same_output: bool = False,
-            keep_time_dim: bool = False
+            keep_time_dim: bool = False,
+            add_polar_layer: bool = True
     ):
         super().__init__()
         self.input_channels = input_channels
@@ -223,9 +224,15 @@ class DBlock(torch.nn.Module):
         self.first_relu = first_relu
         self.keep_same_output = keep_same_output
         self.keep_time_dim = keep_time_dim
+        self.add_polar_layer = add_polar_layer
 
         assert conv_type in ['Conv2d', 'Conv3d']
         self.conv_type = conv_type
+        # TODO: workaround the kernel_size parameter with DictConfig. DictConfig converts iterables into ListConfig
+        # objects. For most torch layers, an Iterable type is acceptable. However the pooling layer for some reason
+        # demands that this be a tuple. Possibly,
+        #   - use a dict instead of DictConfig, maybe instantiate is happy with that
+        #   - simply do this operation manually in `forward` with some reshapes
         pool_config = DictConfig(dict(
             _target_=f"torch.nn.{'AvgPool3d' if self.conv_type == 'Conv3d' else 'AvgPool2d'}",
             kernel_size=(1, 2, 2) if (self.conv_type == 'Conv3d' and self.keep_time_dim) else 2
@@ -237,7 +244,7 @@ class DBlock(torch.nn.Module):
             out_channels=output_channels,
             kernel_size=1
         ))
-        self.conv_1x1 = CubeSphereLayer(conv_1x1_config, use_spectral_norm=True)
+        self.conv_1x1 = CubeSphereLayer(conv_1x1_config, use_spectral_norm=True, add_polar_layer=self.add_polar_layer)
         conv_3x3_config = DictConfig(dict(
             _target_=f"torch.nn.{self.conv_type}",
             in_channels=input_channels,
@@ -247,12 +254,12 @@ class DBlock(torch.nn.Module):
         ))
         self.first_conv_3x3 = torch.nn.Sequential(
             CubeSpherePadding(),
-            CubeSphereLayer(conv_3x3_config, use_spectral_norm=True)
+            CubeSphereLayer(conv_3x3_config, use_spectral_norm=True, add_polar_layer=self.add_polar_layer)
         )
         conv_3x3_config['in_channels'] = output_channels
         self.last_conv_3x3 = torch.nn.Sequential(
             CubeSpherePadding(),
-            CubeSphereLayer(conv_3x3_config, use_spectral_norm=True)
+            CubeSphereLayer(conv_3x3_config, use_spectral_norm=True, add_polar_layer=self.add_polar_layer)
         )
         self.relu = torch.nn.ReLU()
 
@@ -282,13 +289,15 @@ class TemporalDiscriminator(torch.nn.Module):
             input_channels: int,
             num_layers: int = 3,
             internal_channels: int = 8,
-            keep_time_dim: bool = False
+            keep_time_dim: bool = False,
+            add_polar_layer: bool = True
     ):
         super().__init__()
         self.input_channels = input_channels
         self.num_layers = num_layers
         self.internal_channels = internal_channels
         self.keep_time_dim = keep_time_dim
+        self.add_polar_layer = add_polar_layer
 
         # self.downsample = torch.nn.AvgPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2))
         self.d1 = DBlock(
@@ -296,13 +305,15 @@ class TemporalDiscriminator(torch.nn.Module):
             output_channels=self.internal_channels * self.input_channels,
             conv_type='Conv3d',
             first_relu=False,
-            keep_time_dim=self.keep_time_dim
+            keep_time_dim=self.keep_time_dim,
+            add_polar_layer=self.add_polar_layer
         )
         self.d2 = DBlock(
             input_channels=self.internal_channels * self.input_channels,
             output_channels=2 * self.internal_channels * self.input_channels,
             conv_type='Conv3d',
-            keep_time_dim=self.keep_time_dim
+            keep_time_dim=self.keep_time_dim,
+            add_polar_layer=self.add_polar_layer
         )
         self.intermediate_dblocks = torch.nn.ModuleList()
         new_int_channels = int(self.internal_channels)
@@ -313,6 +324,7 @@ class TemporalDiscriminator(torch.nn.Module):
                     input_channels=new_int_channels * self.input_channels,
                     output_channels=2 * new_int_channels * self.input_channels,
                     conv_type='Conv2d',
+                    add_polar_layer=self.add_polar_layer
                 )
             )
 
@@ -321,6 +333,7 @@ class TemporalDiscriminator(torch.nn.Module):
             output_channels=2 * new_int_channels * self.input_channels,
             keep_same_output=True,
             conv_type='Conv2d',
+            add_polar_layer=self.add_polar_layer
         )
 
         self.fc = spectral_norm(torch.nn.Linear(2 * new_int_channels * self.input_channels, 1))
