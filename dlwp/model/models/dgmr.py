@@ -191,6 +191,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.manual_backward(generator_loss)
         g_opt.step()
         self.log("train/g_loss", generator_loss, prog_bar=True)
+        self.log("train/g_grid", self.loss(prediction, targets, None), prog_bar=False)
 
     def validation_step(
             self,
@@ -199,8 +200,11 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
-        score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
-        disc_loss = loss_hinge_gen(score_generated)
+        if self.current_epoch >= self.disc_start_epoch:
+            score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
+            disc_loss = loss_hinge_gen(score_generated)
+        else:
+            disc_loss = None
         loss = self.loss(outputs, targets, disc_loss)
         self.log('val_loss', loss, prog_bar=True, sync_dist=True, batch_size=self.batch_size)
 
