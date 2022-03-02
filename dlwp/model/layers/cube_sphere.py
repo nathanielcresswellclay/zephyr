@@ -1,3 +1,5 @@
+from typing import DefaultDict, Union
+
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
@@ -13,7 +15,7 @@ class CubeSphereLayer(torch.nn.Module):
     """
     def __init__(
             self,
-            base_layer: DictConfig,
+            base_layer: Union[DictConfig, DefaultDict],
             add_polar_layer: bool = True,
             flip_north_pole: bool = True,
             use_spectral_norm: bool = False

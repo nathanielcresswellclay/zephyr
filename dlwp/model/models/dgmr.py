@@ -202,7 +202,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         outputs = self(inputs)
         if self.current_epoch >= self.disc_start_epoch:
             score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
-            disc_loss = loss_hinge_gen(score_generated)
+            # For the purposes of validation loss, don't allow spurious large values of discriminator score
+            disc_loss = torch.clamp(loss_hinge_gen(score_generated), min=-2.)
         else:
             disc_loss = None
         loss = self.loss(outputs, targets, disc_loss)
@@ -244,10 +245,10 @@ class DBlock(torch.nn.Module):
         # demands that this be a tuple. Possibly,
         #   - use a dict instead of DictConfig, maybe instantiate is happy with that
         #   - simply do this operation manually in `forward` with some reshapes
-        pool_config = DictConfig(dict(
+        pool_config = dict(
             _target_=f"torch.nn.{'AvgPool3d' if self.conv_type == 'Conv3d' else 'AvgPool2d'}",
             kernel_size=(1, 2, 2) if (self.conv_type == 'Conv3d' and self.keep_time_dim) else 2
-        ))
+        )
         self.pooling = CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False)
         conv_1x1_config = DictConfig(dict(
             _target_=f"torch.nn.{self.conv_type}",
