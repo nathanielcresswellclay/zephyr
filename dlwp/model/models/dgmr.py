@@ -32,7 +32,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             output_time_dim: int,
             cube_dim: int = 64,
             batch_size: Optional[int] = None,
-            disc_steps_per_iter: int = 2
+            disc_steps_per_iter: int = 2,
+            disc_start_epoch: int = 0
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
@@ -57,6 +58,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         :param output_time_dim: number of time steps in the output array
         :param cube_dim: number of points on the side of a cube face
         :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
+        :param disc_steps_per_iter: number of discriminator optimization steps for each generator optimizer step
+        :param disc_start_epoch: epoch number at which to start training the discriminator. This is useful if the
+            discriminator is converging much faster than the generator is producing realistic outputs. Since the
+            discriminator can take much longer to iterate, potentially saves a lot of computation time.
         """
         super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
@@ -68,6 +73,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.input_time_dim = input_time_dim
         self.output_time_dim = output_time_dim
         self.disc_steps_per_iter = disc_steps_per_iter
+        self.disc_start_epoch = disc_start_epoch
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -140,54 +146,51 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
     def forward(self, inputs: Sequence, output_only_last=False) -> torch.Tensor:
         return self.generator(inputs, output_only_last)
 
+    def _score_discriminator(self, inputs, targets, prediction):
+        # Size of data for split
+        batch_size = inputs[0].shape[0]
+        # Cat along time dimension [B, I+O, C, H, W]
+        generated_sequence = torch.cat([inputs[0], prediction], dim=1)
+        real_sequence = torch.cat([inputs[0], targets], dim=1)
+        # Concatenate fake and real sequences in batch for processing
+        concatenated_inputs = torch.cat([real_sequence, generated_sequence], dim=0)
+        concatenated_outputs = self.discriminator(concatenated_inputs)
+        score_real, score_generated = torch.split(concatenated_outputs, batch_size, dim=0)
+        return score_real, score_generated
+
     def training_step(self, batch, batch_idx):
         inputs, targets = batch
-        batch_size = inputs[0].shape[0]
 
         self.global_iteration += 1
         g_opt, d_opt = self.optimizers()
-        scheduler = self.lr_schedulers()
 
-        # Multiple discriminator steps per generator step
-        for _ in range(self.disc_steps_per_iter):
-            # Make a prediction with the generator. Must make at each step because tensors are used in backward().
-            prediction = self(inputs)
-            # Cat along time dimension [B, I+O, C, H, W]
-            generated_sequence = torch.cat([inputs[0], prediction], dim=1)
-            real_sequence = torch.cat([inputs[0], targets], dim=1)
-            # Concatenate fake and real sequences in batch for processing
-            concatenated_inputs = torch.cat([real_sequence, generated_sequence], dim=0)
-
-            concatenated_outputs = self.discriminator(concatenated_inputs)
-            score_real, score_generated = torch.split(concatenated_outputs, batch_size, dim=0)
-            discriminator_loss = loss_hinge_disc(score_generated, score_real)
-            d_opt.zero_grad()
-            self.manual_backward(discriminator_loss)
-            d_opt.step()
+        if self.current_epoch >= self.disc_start_epoch:
+            # Multiple discriminator steps per generator step
+            for _ in range(self.disc_steps_per_iter):
+                # Make a prediction with the generator. Must make at each step because tensors are used in backward().
+                prediction = self(inputs)
+                score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
+                discriminator_loss = loss_hinge_disc(score_generated, score_real)
+                d_opt.zero_grad()
+                self.manual_backward(discriminator_loss)
+                d_opt.step()
+                self.log("train/d_loss", discriminator_loss, prog_bar=True)
 
         # Make a prediction with the generator
         prediction = self(inputs)
-        # Cat along time dimension [B, I+O, C, H, W]
-        generated_sequence = torch.cat([inputs[0], prediction], dim=1)
-
-        # Update generator with latest discriminator prediction
-        score_generated = self.discriminator(generated_sequence)
-        generator_disc_loss = loss_hinge_gen(score_generated)
+        # Update generator with latest discriminator prediction, if making training the discriminator. Seems like we
+        # have to redo a representative batch for this to work correctly, even though the real_sequence should not
+        # be necessary. Maybe a batch norm or something like that.
+        if self.current_epoch >= self.disc_start_epoch:
+            score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
+            generator_disc_loss = loss_hinge_gen(score_generated)
+        else:
+            generator_disc_loss = None
         generator_loss = self.loss(prediction, targets, generator_disc_loss)
         g_opt.zero_grad()
         self.manual_backward(generator_loss)
         g_opt.step()
-
-        # Step the scheduler
-        scheduler.step(generator_loss)
-
-        self.log_dict(
-            {
-                "train/d_loss": discriminator_loss,
-                "train/g_loss": generator_loss,
-            },
-            prog_bar=True,
-        )
+        self.log("train/g_loss", generator_loss, prog_bar=True)
 
     def validation_step(
             self,
@@ -196,13 +199,17 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
-        output_sequence = torch.cat([inputs[0], outputs], dim=1)
-        disc_score = loss_hinge_gen(self.discriminator(output_sequence))
-        loss = self.loss(outputs, targets, disc_score)
-        self.log('val_loss', loss, sync_dist=True, batch_size=self.batch_size)
+        score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
+        disc_loss = loss_hinge_gen(score_generated)
+        loss = self.loss(outputs, targets, disc_loss)
+        self.log('val_loss', loss, prog_bar=True, sync_dist=True, batch_size=self.batch_size)
+
+        # Step the scheduler
+        scheduler = self.lr_schedulers()
+        scheduler.step(loss)
 
         for m, metric in self.metrics.items():
-            self.log(f'val_{m}', metric(outputs, targets), prog_bar=False, sync_dist=True, batch_size=self.batch_size)
+            self.log(f'val/{m}', metric(outputs, targets), prog_bar=False, sync_dist=True, batch_size=self.batch_size)
 
         return loss
 

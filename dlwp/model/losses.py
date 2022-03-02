@@ -21,7 +21,10 @@ class GeneratorLoss(torch.nn.Module):
         self.register_buffer('disc_score_weight', torch.tensor(disc_score_weight, dtype=torch.float32))
 
     def forward(self, inputs, targets, disc_score):
-        return self.loss(inputs, targets) + self.disc_score_weight * disc_score
+        if disc_score is not None:
+            return self.loss(inputs, targets) + self.disc_score_weight * disc_score
+        else:
+            return self.loss(inputs, targets)
 
 
 def loss_hinge_disc(score_generated, score_real):
