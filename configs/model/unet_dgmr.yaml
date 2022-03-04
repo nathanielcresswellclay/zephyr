@@ -19,6 +19,7 @@ cube_dim: ${data.cube_dim}
 batch_size: ${batch_size}
 disc_steps_per_iter: 2
 disc_start_epoch: 10
+disc_loss_in_validation: false
 
 # Parameters automatically overridden in train code
 input_channels: 6

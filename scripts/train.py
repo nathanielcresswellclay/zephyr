@@ -35,7 +35,7 @@ def train(cfg):
     )
     model.hparams['batch_size'] = cfg.batch_size
     model.hparams['learning_rate'] = cfg.learning_rate
-    print(pl.utilities.model_summary.summarize(model, max_depth=-1))
+    logger.debug(pl.utilities.model_summary.summarize(model, max_depth=-1))
 
     # Callbacks for trainer
     if cfg.callbacks is not None:

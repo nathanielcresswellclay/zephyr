@@ -33,7 +33,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             cube_dim: int = 64,
             batch_size: Optional[int] = None,
             disc_steps_per_iter: int = 2,
-            disc_start_epoch: int = 0
+            disc_start_epoch: int = 0,
+            disc_loss_in_validation: bool = False
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
@@ -62,6 +63,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         :param disc_start_epoch: epoch number at which to start training the discriminator. This is useful if the
             discriminator is converging much faster than the generator is producing realistic outputs. Since the
             discriminator can take much longer to iterate, potentially saves a lot of computation time.
+        :param disc_loss_in_validation: if True, includes the discriminator component of loss in validation
         """
         super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
@@ -74,6 +76,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.output_time_dim = output_time_dim
         self.disc_steps_per_iter = disc_steps_per_iter
         self.disc_start_epoch = disc_start_epoch
+        self.disc_loss_in_validation = disc_loss_in_validation
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -200,23 +203,27 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
-        if self.current_epoch >= self.disc_start_epoch:
+        if self.current_epoch >= self.disc_start_epoch and self.disc_loss_in_validation:
             score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
-            # For the purposes of validation loss, don't allow spurious large values of discriminator score
-            disc_loss = torch.clamp(loss_hinge_gen(score_generated), min=-2.)
+            disc_loss = loss_hinge_gen(score_generated)
         else:
             disc_loss = None
         loss = self.loss(outputs, targets, disc_loss)
         self.log('val_loss', loss, prog_bar=True, sync_dist=True, batch_size=self.batch_size)
 
-        # Step the scheduler
-        scheduler = self.lr_schedulers()
-        scheduler.step(loss)
-
         for m, metric in self.metrics.items():
             self.log(f'val/{m}', metric(outputs, targets), prog_bar=False, sync_dist=True, batch_size=self.batch_size)
 
         return loss
+
+    def on_epoch_end(self) -> None:
+        # Step the scheduler. At most single scheduler (not list) returned.
+        scheduler = self.lr_schedulers()
+        # If the selected scheduler is a ReduceLROnPlateau scheduler.
+        if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            scheduler.step(self.trainer.callback_metrics['val_loss'])
+        elif scheduler is not None:
+            scheduler.step()
 
 
 class DBlock(torch.nn.Module):
