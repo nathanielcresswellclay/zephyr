@@ -3,11 +3,12 @@ import re
 
 import numpy as np
 import pandas as pd
+from pytorch_lightning.callbacks import TQDMProgressBar
 
 logger = logging.getLogger(__name__)
 
 
-def configure_logging(verbose=2):
+def configure_logging(verbose=1):
     verbose_levels = {
         0: logging.WARNING,
         1: logging.INFO,
@@ -155,3 +156,11 @@ def insolation(dates, lat, lon, S=1., daily=False, enforce_2d=False, clip_zero=T
         sol[sol < 0.] = 0.
 
     return sol.astype(np.float32)
+
+
+class CustomProgressBar(TQDMProgressBar):
+    def get_metrics(self, *args, **kwargs):
+        # don't show the version number
+        items = super().get_metrics(*args, **kwargs)
+        items.pop("v_num", None)
+        return items

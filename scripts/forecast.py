@@ -46,7 +46,7 @@ def inference(args: argparse.Namespace):
     forecast_dates = get_forecast_dates(args.forecast_init_start, args.forecast_init_end, args.freq)
     os.makedirs(args.output_directory, exist_ok=True)
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
     with initialize(config_path=os.path.join(args.hydra_path, '.hydra')):
         cfg = compose('config.yaml')
 
@@ -178,8 +178,10 @@ if __name__ == '__main__':
                         help="Prefix for test data files")
     parser.add_argument('--data-suffix', type=str, default=None,
                         help="Suffix for test data files")
+    parser.add_argument('--gpu', type=int, default=0,
+                        help="Index of GPU device on which to run model")
 
-    configure_logging()
+    configure_logging(2)
     run_args = parser.parse_args()
 
     # Hydra requires a relative (not absolute) path to working config directory. It also works in a sub-directory of

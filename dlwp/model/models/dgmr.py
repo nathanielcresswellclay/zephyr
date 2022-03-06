@@ -216,14 +216,16 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
 
         return loss
 
-    def on_epoch_end(self) -> None:
-        # Step the scheduler. At most single scheduler (not list) returned.
-        scheduler = self.lr_schedulers()
-        # If the selected scheduler is a ReduceLROnPlateau scheduler.
-        if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            scheduler.step(self.trainer.callback_metrics['val_loss'])
-        elif scheduler is not None:
-            scheduler.step()
+    def training_epoch_end(self, outputs) -> None:
+        if self.trainer.is_global_zero:
+            # Step the scheduler. Single scheduler for generator (not list) returned.
+            scheduler = self.lr_schedulers()
+            if scheduler is not None:
+                # If the selected scheduler is a ReduceLROnPlateau scheduler.
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(self.trainer.callback_metrics['val_loss'])
+                else:
+                    scheduler.step()
 
 
 class DBlock(torch.nn.Module):
