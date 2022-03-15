@@ -34,7 +34,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             batch_size: Optional[int] = None,
             disc_steps_per_iter: int = 2,
             disc_start_epoch: int = 0,
-            disc_loss_in_validation: bool = False
+            disc_loss_in_validation: bool = False,
+            gradient_clip_val: Optional[float] = None
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
@@ -64,6 +65,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             discriminator is converging much faster than the generator is producing realistic outputs. Since the
             discriminator can take much longer to iterate, potentially saves a lot of computation time.
         :param disc_loss_in_validation: if True, includes the discriminator component of loss in validation
+        :param gradient_clip_val: norm float value for gradient clipping, normally passed to Trainer but implemented
+            manually in this manual optimization model
         """
         super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
@@ -77,6 +80,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.disc_steps_per_iter = disc_steps_per_iter
         self.disc_start_epoch = disc_start_epoch
         self.disc_loss_in_validation = disc_loss_in_validation
+        self.gradient_clip_val = gradient_clip_val
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -176,6 +180,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
                 discriminator_loss = loss_hinge_disc(score_generated, score_real)
                 d_opt.zero_grad()
                 self.manual_backward(discriminator_loss)
+                if self.gradient_clip_val is not None:
+                    self.clip_gradients(d_opt, self.gradient_clip_val)
                 d_opt.step()
                 self.log("train/d_loss", discriminator_loss, prog_bar=True)
 
@@ -192,6 +198,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         generator_loss = self.loss(prediction, targets, generator_disc_loss)
         g_opt.zero_grad()
         self.manual_backward(generator_loss)
+        if self.gradient_clip_val is not None:
+            self.clip_gradients(g_opt, self.gradient_clip_val)
         g_opt.step()
         self.log("train/g_loss", generator_loss, prog_bar=True)
         self.log("train/g_grid", self.loss(prediction, targets, None), prog_bar=False)
