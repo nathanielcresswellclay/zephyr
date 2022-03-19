@@ -18,7 +18,7 @@ class GeneratorLoss(torch.nn.Module):
     def __init__(self, loss: torch.nn.Module, disc_score_weight: float):
         super().__init__()
         self.loss = loss
-        self.register_buffer('disc_score_weight', torch.tensor(disc_score_weight, dtype=torch.float32))
+        self.disc_score_weight = torch.tensor(disc_score_weight, dtype=torch.float32)
 
     def forward(self, inputs, targets, disc_score):
         if disc_score is not None:

@@ -26,13 +26,14 @@ def train(cfg):
     output_channels = len(cfg.data.output_variables) if cfg.data.output_variables is not None else input_channels
     n_constants = len(cfg.data.get('constants', {}))
     decoder_input_channels = int(cfg.data.get('add_insolation', 0))
-    model = instantiate(
-        cfg.model,
-        input_channels=input_channels,
-        output_channels=output_channels,
-        n_constants=n_constants,
-        decoder_input_channels=decoder_input_channels
-    )
+    cfg.model['input_channels'] = input_channels
+    cfg.model['output_channels'] = output_channels
+    cfg.model['n_constants'] = n_constants
+    cfg.model['decoder_input_channels'] = decoder_input_channels
+    model = instantiate(cfg.model)
+    if cfg.get('checkpoint_path', None) is not None and cfg.get('load_weights_only', False):
+        logger.info(f"loading checkpoint {cfg.checkpoint_path}")
+        model = model.load_from_checkpoint(cfg.checkpoint_path, strict=cfg.get('load_strict', True), **cfg.model)
     model.hparams['batch_size'] = cfg.batch_size
     model.hparams['learning_rate'] = cfg.learning_rate
     logger.debug(pl.utilities.model_summary.summarize(model, max_depth=-1))
@@ -52,7 +53,11 @@ def train(cfg):
 
     # Trainer fit
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=training_logger)
-    trainer.fit(model=model, datamodule=data_module, ckpt_path=cfg.get('checkpoint_path', None))
+    trainer.fit(
+        model=model,
+        datamodule=data_module,
+        ckpt_path=cfg.get('checkpoint_path', None) if not cfg.get('load_weights_only', False) else None
+    )
 
 
 if __name__ == '__main__':

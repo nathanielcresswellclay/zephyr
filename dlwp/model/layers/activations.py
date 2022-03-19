@@ -12,7 +12,7 @@ class CappedLeakyReLU(torch.nn.Module):
         """
         super().__init__()
         self.add_module('relu', torch.nn.LeakyReLU(**kwargs))
-        self.register_buffer('cap', torch.tensor(cap_value, dtype=torch.float32))
+        self.cap = torch.tensor(cap_value, dtype=torch.float32)
 
     def forward(self, inputs):
         x = self.relu(inputs)

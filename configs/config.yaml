@@ -12,6 +12,8 @@ defaults:
 
 experiment_name: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 checkpoint_path: null
+load_weights_only: false
+load_strict: true
 seed: 0
 
 batch_size: 32

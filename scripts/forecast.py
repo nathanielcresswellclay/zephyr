@@ -83,7 +83,8 @@ def inference(args: argparse.Namespace):
         model_version = f'version_{args.model_version}'
     checkpoint = os.path.join(version_directory, model_version, 'checkpoints', args.model_checkpoint)
     logger.info(f"load model checkpoint {checkpoint}")
-    model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim)
+    model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim,
+                                       strict=not args.non_strict)
     model = model.to(device)
 
     # Allocate giant array. One extra time step for the init state.
@@ -156,6 +157,8 @@ if __name__ == '__main__':
     parser.add_argument('--model-version', default=None, type=int,
                         help="Model version. Defaults to using the latest available version unless a specific integer "
                              "version number is specified.")
+    parser.add_argument('--non-strict', action='store_true',
+                        help="Disable strict mode for model checkpoint loading")
     parser.add_argument('-l', '--lead-time', type=int, default=168,
                         help="Maximum forecast lead time to predict, in integer hours")
     parser.add_argument('-s', '--forecast-init-start', type=str, default='2017-01-02',
