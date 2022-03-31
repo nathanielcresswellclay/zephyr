@@ -120,7 +120,7 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
             )
         else:
             raise NotImplementedError
-        if self.splits is not None:
+        if self.splits is not None and self.forecast_init_times is None:
             self.train_dataset = TimeSeriesDataset(
                 dataset.sel(time=slice(self.splits['train_date_start'], self.splits['train_date_end'])),
                 scaling=self.scaling,
@@ -155,8 +155,7 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
                 gap=self.gap,
                 batch_size=self.batch_size,
                 drop_last=False,
-                add_insolation=self.add_insolation,
-                forecast_init_times=self.forecast_init_times
+                add_insolation=self.add_insolation
             )
         else:
             self.test_dataset = TimeSeriesDataset(

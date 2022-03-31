@@ -257,11 +257,8 @@ class DBlock(torch.nn.Module):
 
         assert conv_type in ['Conv2d', 'Conv3d']
         self.conv_type = conv_type
-        # TODO: workaround the kernel_size parameter with DictConfig. DictConfig converts iterables into ListConfig
-        # objects. For most torch layers, an Iterable type is acceptable. However the pooling layer for some reason
-        # demands that this be a tuple. Possibly,
-        #   - use a dict instead of DictConfig, maybe instantiate is happy with that
-        #   - simply do this operation manually in `forward` with some reshapes
+        # Note this uses normal dict instead of DictConfig because otherwise tuple is converted to ListConfig,
+        # which the torch pooling layers do not like
         pool_config = dict(
             _target_=f"torch.nn.{'AvgPool3d' if self.conv_type == 'Conv3d' else 'AvgPool2d'}",
             kernel_size=(1, 2, 2) if (self.conv_type == 'Conv3d' and self.keep_time_dim) else 2
