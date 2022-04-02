@@ -6,6 +6,7 @@ defaults:
 directory: /home/quicksilver2/jweyn/Data/DLWP
 prefix: era5_1deg_3h_CS64S_1979-2018_
 suffix: ''
+data_format: classic
 input_variables:
   - z500
   - tau300-700

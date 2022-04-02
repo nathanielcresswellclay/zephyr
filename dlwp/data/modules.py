@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 # Internal modules
-from .data_loading import open_time_series_dataset_classic, TimeSeriesDataset
+from .data_loading import open_time_series_dataset_classic, open_time_series_dataset_zarr, TimeSeriesDataset
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,11 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
         :param directory: directory containing data files
         :param prefix: prefix appended to all data files
         :param suffix: suffix appended to all data files
-        :param data_format: currently only 'classic' is allowed.
+        :param data_format: str indicating data schema.
             'classic': use classic DLWP file types. Loads .nc files, assuming dimensions [sample, varlev, face, height,
                 width] and data variables 'predictors', 'lat', and 'lon'.
+            'zarr': use updated zarr file type. Assumes dimensions [time, face, height, width] and variable names
+                corresponding to the variables.
         :param batch_size: size of batches to draw from data
         :param drop_last: whether to drop the last batch if it is smaller than batch_size
         :param input_variables: list of input variable names, to be found in data file name
@@ -108,18 +110,21 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.data_format == 'classic':
-            dataset = open_time_series_dataset_classic(
-                directory=self.directory,
-                input_variables=self.input_variables,
-                output_variables=self.output_variables,
-                constants=self.constants,
-                prefix=self.prefix,
-                suffix=self.suffix,
-                batch_size=self.batch_size,
-                scaling=self.scaling
-            )
+            open_fn = open_time_series_dataset_classic
+        elif self.data_format == 'zarr':
+            open_fn = open_time_series_dataset_zarr
         else:
-            raise NotImplementedError
+            raise ValueError("'data_format' must be one of ['classic', 'zarr']")
+        dataset = open_fn(
+            directory=self.directory,
+            input_variables=self.input_variables,
+            output_variables=self.output_variables,
+            constants=self.constants,
+            prefix=self.prefix,
+            suffix=self.suffix,
+            batch_size=self.batch_size,
+            scaling=self.scaling
+        )
         if self.splits is not None and self.forecast_init_times is None:
             self.train_dataset = TimeSeriesDataset(
                 dataset.sel(time=slice(self.splits['train_date_start'], self.splits['train_date_end'])),

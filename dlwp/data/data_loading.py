@@ -86,6 +86,65 @@ def open_time_series_dataset_classic(
     return result
 
 
+def open_time_series_dataset_zarr(
+        directory: str,
+        input_variables: Sequence,
+        output_variables: Optional[Sequence],
+        constants: Optional[DefaultDict] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
+        batch_size: int = 32,
+        scaling: Optional[DictConfig] = None
+) -> xr.Dataset:
+    output_variables = output_variables or input_variables
+    all_variables = np.union1d(input_variables, output_variables)
+    prefix = prefix or ''
+    suffix = suffix or ''
+
+    def get_file_name(path, var):
+        return os.path.join(path, f"{prefix}{var}{suffix}.zarr")
+
+    merge_time = time.time()
+    logger.info("merging input datasets")
+
+    datasets = []
+    for variable in all_variables:
+        file_name = get_file_name(directory, variable)
+        logger.debug(f"open zarr dataset {file_name}")
+        ds = xr.open_zarr(file_name)
+        # Apply log scaling lazily
+        if variable in scaling and scaling[variable].get('log_epsilon', None) is not None:
+            ds[variable] = np.log(ds[variable] + scaling[variable]['log_epsilon']) \
+                           - np.log(scaling[variable]['log_epsilon'])
+        datasets.append(ds)
+    # Merge datasets
+    data = xr.merge(datasets)
+
+    # Convert to input/target array by merging along the variables
+    input_da = data[list(input_variables)].to_array('channel_in', name='inputs').transpose(
+        'time', 'channel_in', 'face', 'height', 'width')
+    target_da = data[list(output_variables)].to_array('channel_out', name='targets').transpose(
+        'time', 'channel_out', 'face', 'height', 'width')
+
+    result = xr.Dataset()
+    result['inputs'] = input_da
+    result['targets'] = target_da
+
+    # Get constants
+    if constants is not None:
+        constants_ds = []
+        for name, var in constants.items():
+            constants_ds.append(xr.open_zarr(get_file_name(directory, name))[var])
+        constants_ds = xr.merge(constants_ds, compat='override')
+        constants_da = constants_ds.to_array('channel_c', name='constants').transpose(
+            'channel_c', 'face', 'height', 'width')
+        result['constants'] = constants_da
+
+    logger.info(f"merged datasets in {time.time() - merge_time:0.1f} s")
+
+    return result
+
+
 class TimeSeriesDataset(Dataset):
     def __init__(
             self,

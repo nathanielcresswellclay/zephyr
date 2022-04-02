@@ -2,7 +2,7 @@ _target_: dlwp.data.modules.TimeSeriesDataModule
 directory: ${data.directory}
 prefix: ${data.prefix}
 suffix: ${data.suffix}
-data_format: classic
+data_format: ${data.data_format}
 batch_size: ${batch_size}
 drop_last: false
 input_variables: ${data.input_variables}
