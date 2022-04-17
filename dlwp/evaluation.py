@@ -149,6 +149,18 @@ class ForecastEval(object):
                                                  self._cs_config['map_files'],
                                                  self._eval_var)
  
+    def get_verification(self):
+        """
+        return the the verification da
+        """
+        return self._verification_da_LL
+
+    def set_verification(self,verif):
+        """
+        set verification from incoming da 
+        """
+        
+        self._verification_da_LL = verif  
     def scale_das(self):
         """
         Scale the incoming DataArray with mean and std defined in predictor file. This function will 
