@@ -120,6 +120,10 @@ class ForecastEval(object):
     def generate_verification_from_predictor(self,predictor_file=None):
         """
         use predi file to generate a verification ds 
+
+        :param predictor_file: string: 
+              File with path to predictor file around which a verification dataset will be 
+              generated. 
         """
         # Check inputs 
         if predictor_file is None:
@@ -157,10 +161,14 @@ class ForecastEval(object):
 
     def set_verification(self,verif):
         """
-        set verification from incoming da 
+        set verification from incoming da. This is useful if comparing several forecats from 
+        different models and you want to avoid generating the verification from data everytime.  
+
+        :param: verif: xarray.DataArray
+            dataarray of formated verification 
         """
-        
         self._verification_da_LL = verif  
+
     def scale_das(self):
         """
         Scale the incoming DataArray with mean and std defined in predictor file. This function will 
