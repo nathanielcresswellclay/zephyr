@@ -108,7 +108,7 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
         self.val_dataset = None
         self.test_dataset = None
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: Optional[str] = None) -> None:  # pylint: disable=unused-argument
         if self.data_format == 'classic':
             open_fn = open_time_series_dataset_classic
         elif self.data_format == 'zarr':
@@ -203,4 +203,3 @@ class TimeSeriesDataModule(pl.LightningDataModule, ABC):
             shuffle=False,
             batch_size=None
         )
-

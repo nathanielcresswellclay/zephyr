@@ -37,7 +37,7 @@ class BaseModel(pl.LightningModule, ABC):
     def training_step(
             self,
             batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
-            batch_idx: int
+            batch_idx: int  # pylint: disable=unused-argument
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
@@ -48,7 +48,7 @@ class BaseModel(pl.LightningModule, ABC):
     def validation_step(
             self,
             batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
-            batch_idx: int
+            batch_idx: int  # pylint: disable=unused-argument
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)

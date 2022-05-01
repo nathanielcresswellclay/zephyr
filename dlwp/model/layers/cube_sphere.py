@@ -61,6 +61,7 @@ class CubeSphereLayer(torch.nn.Module):
         return torch.cat(results, -3)
 
 
+# pylint: disable=invalid-name
 class CubeSpherePadding(torch.nn.Module):
     """
     Padding layer for data on a cubed sphere. The requirements for using this layer are as follows:

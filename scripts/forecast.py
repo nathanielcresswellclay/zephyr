@@ -20,7 +20,7 @@ logging.getLogger('cfgrib').setLevel(logging.ERROR)
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
 
-def _convert_time_step(dt):
+def _convert_time_step(dt):  # pylint: disable=invalid-name
     return pd.Timedelta(hours=dt) if isinstance(dt, int) else pd.Timedelta(dt)
 
 
@@ -82,7 +82,7 @@ def inference(args: argparse.Namespace):
     else:
         model_version = f'version_{args.model_version}'
     checkpoint = os.path.join(version_directory, model_version, 'checkpoints', args.model_checkpoint)
-    logger.info(f"load model checkpoint {checkpoint}")
+    logger.info("load model checkpoint %s", checkpoint)
     model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim,
                                        strict=not args.non_strict)
     model = model.to(device)
@@ -97,14 +97,14 @@ def inference(args: argparse.Namespace):
 
     # Iterate over model predictions
     pbar = tqdm(loader)
-    for b, inputs in enumerate(pbar):
-        pbar.postfix = pd.Timestamp(forecast_dates[b]).strftime('init %Y-%m-%d %HZ')
+    for j, inputs in enumerate(pbar):
+        pbar.postfix = pd.Timestamp(forecast_dates[j]).strftime('init %Y-%m-%d %HZ')
         pbar.update()
         # Last input time step for init state
-        prediction[b][0] = inputs[0][0, -1]
+        prediction[j][0] = inputs[0][0, -1]
         inputs = [i.to(device) for i in inputs]
         with torch.no_grad():
-            prediction[b][1:] = model(inputs).cpu().numpy()
+            prediction[j][1:] = model(inputs).cpu().numpy()
 
     # Generate dataarray with coordinates
     meta_ds = data_module.test_dataset.ds
@@ -140,12 +140,12 @@ def inference(args: argparse.Namespace):
 
     output_file = os.path.join(args.output_directory,
                                f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
-    logger.info(f"exporting data to {output_file}")
+    logger.info("exporting data to %s", output_file)
     if args.to_zarr:
         prediction_ds.to_zarr(output_file)
     else:
         prediction_ds.to_netcdf(output_file)
-    logger.debug(f"wrote file in {time.time() - write_time:0.1f} s")
+    logger.debug("wrote file in %0.1f s", time.time() - write_time)
 
 
 if __name__ == '__main__':
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     # Hydra requires a relative (not absolute) path to working config directory. It also works in a sub-directory of
     # current python working directory.
     run_args.hydra_path = os.path.relpath(run_args.model_path, os.path.join(os.getcwd(), 'hydra'))
-    logger.debug(f"model path: {run_args.model_path}")
-    logger.debug(f"python working dir: {os.getcwd()}")
-    logger.debug(f"hydra path: {run_args.hydra_path}")
+    logger.debug("model path: %s", run_args.model_path)
+    logger.debug("python working dir: %s", os.getcwd())
+    logger.debug("hydra path: %s", run_args.hydra_path)
     inference(run_args)

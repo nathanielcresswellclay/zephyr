@@ -212,7 +212,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         inputs, targets = batch
         outputs = self(inputs)
         if self.current_epoch >= self.disc_start_epoch and self.disc_loss_in_validation:
-            score_real, score_generated = self._score_discriminator(inputs, targets, outputs)
+            _, score_generated = self._score_discriminator(inputs, targets, outputs)
             disc_loss = loss_hinge_gen(score_generated)
         else:
             disc_loss = None
@@ -224,7 +224,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
 
         return loss
 
-    def training_epoch_end(self, outputs) -> None:
+    def training_epoch_end(self, outputs) -> None:  # pylint: disable=unused-argument
         if self.trainer.is_global_zero:
             # Step the scheduler. Single scheduler for generator (not list) returned.
             scheduler = self.lr_schedulers()
@@ -290,6 +290,7 @@ class DBlock(torch.nn.Module):
         self.relu = torch.nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # pylint: disable=invalid-name
         if self.input_channels != self.output_channels:
             x1 = self.conv_1x1(x)
             if not self.keep_same_output:
@@ -325,7 +326,7 @@ class TemporalDiscriminator(torch.nn.Module):
         self.keep_time_dim = keep_time_dim
         self.add_polar_layer = add_polar_layer
 
-        # self.downsample = torch.nn.AvgPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2))
+        # pylint: disable=invalid-name
         self.d1 = DBlock(
             input_channels=self.input_channels,
             output_channels=self.internal_channels * self.input_channels,
@@ -367,6 +368,7 @@ class TemporalDiscriminator(torch.nn.Module):
         self.bn = torch.nn.BatchNorm1d(2 * new_int_channels * self.input_channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # pylint: disable=invalid-name
         # Permute time and channels to B, C, T, F, H, W
         x = torch.permute(x, dims=(0, 2, 1, 3, 4, 5))
         # 2 residual 3D blocks to halve resolution if image, double number of channels and reduce

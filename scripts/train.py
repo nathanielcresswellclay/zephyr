@@ -12,7 +12,7 @@ logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
 @hydra.main(config_path='../configs', config_name='config')
 def train(cfg):
-    logger.info(f"experiment working directory: {os.getcwd()}")
+    logger.info("experiment working directory: %s", os.getcwd())
 
     # Seed
     if cfg.seed is not None:
@@ -32,7 +32,7 @@ def train(cfg):
     cfg.model['decoder_input_channels'] = decoder_input_channels
     model = instantiate(cfg.model)
     if cfg.get('checkpoint_path', None) is not None and cfg.get('load_weights_only', False):
-        logger.info(f"loading checkpoint {cfg.checkpoint_path}")
+        logger.info("loading checkpoint %s", cfg.checkpoint_path)
         model = model.load_from_checkpoint(cfg.checkpoint_path, strict=cfg.get('load_strict', True), **cfg.model)
     model.hparams['batch_size'] = cfg.batch_size
     model.hparams['learning_rate'] = cfg.learning_rate

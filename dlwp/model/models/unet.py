@@ -180,25 +180,24 @@ class IterativeUnet(torch.nn.Module):
         """
         if not (self.n_constants > 0 or self.decoder_input_channels > 0):
             return inputs[0].flatten(start_dim=1, end_dim=2)
-        elif self.n_constants == 0:
+        if self.n_constants == 0:
             result = [
                 inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
                 inputs[1][:, slice(step * self.input_time_dim, (step + 1) * self.input_time_dim)].flatten(1, 2)  # DI
             ]
             return torch.cat(result, dim=1)
-        elif self.decoder_input_channels == 0:
+        if self.decoder_input_channels == 0:
             result = [
                 inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
                 inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
             ]
             return torch.cat(result, dim=1)
-        else:
-            result = [
-                inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
-                inputs[1][:, slice(step * self.input_time_dim, (step + 1) * self.input_time_dim)].flatten(1, 2),  # DI
-                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
-            ]
-            return torch.cat(result, dim=1)
+        result = [
+            inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
+            inputs[1][:, slice(step * self.input_time_dim, (step + 1) * self.input_time_dim)].flatten(1, 2),  # DI
+            inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
+        ]
+        return torch.cat(result, dim=1)
 
     def _reshape_outputs(self, outputs: torch.Tensor) -> torch.Tensor:
         shape = tuple(outputs.shape)
@@ -210,7 +209,7 @@ class IterativeUnet(torch.nn.Module):
             if step == 0:
                 input_tensor = self._reshape_inputs(inputs, step)
             else:
-                input_tensor = self._reshape_inputs([outputs[-1]] + [x for x in inputs[1:]], step)
+                input_tensor = self._reshape_inputs([outputs[-1]] + list(inputs[1:]), step)
             hidden_states = self.encoder(input_tensor)
             outputs.append(self._reshape_outputs(self.decoder(hidden_states)))
         if output_only_last:
@@ -258,7 +257,7 @@ class UnetEncoder(torch.nn.Module):
                 modules.append(CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False))
             # Only do one convolution at the bottom of the U-net, since the other is in the decoder
             convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth // 2
-            for m in range(convolution_steps):
+            for _ in range(convolution_steps):
                 conv_config = DictConfig(dict(
                     _target_='torch.nn.Conv2d',
                     in_channels=old_channels,

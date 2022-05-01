@@ -17,23 +17,23 @@ def configure_logging(verbose=1):
     }
     if verbose not in verbose_levels.keys():
         verbose = 1
-    logger = logging.getLogger()
-    logger.setLevel(verbose_levels[verbose])
+    current_logger = logging.getLogger()
+    current_logger.setLevel(verbose_levels[verbose])
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(
         "[%(asctime)s][PID=%(process)d]"
         "[%(levelname)s %(filename)s:%(lineno)d] - %(message)s"))
     handler.setLevel(verbose_levels[verbose])
-    logger.addHandler(handler)
+    current_logger.addHandler(handler)
 
 
-def remove_chars(s):
+def remove_chars(in_str):
     """
     Remove characters from a string that have unintended effects on file paths.
-    :param s: str
+    :param in_str: str
     :return: str
     """
-    return ''.join(re.split('[$/\\\\]', s))
+    return ''.join(re.split('[$/\\\\]', in_str))
 
 
 def to_chunked_dataset(ds, chunking):
@@ -73,7 +73,7 @@ def encode_variables_as_int(ds, dtype='int16', compress=0, exclude_vars=()):
         var_offset = (var_max + var_min) / 2
         var_scale = (var_max - var_min) / (2 * np.iinfo(dtype).max)
         if var_scale == 0:
-            logger.warning(f"min and max for variable {var} are both {var_max}")
+            logger.warning("min and max for variable %s are both %f", var, var_max)
             var_scale = 1.
         ds[var].encoding.update({
             'scale_factor': var_scale,
@@ -92,7 +92,7 @@ def encode_variables_as_int(ds, dtype='int16', compress=0, exclude_vars=()):
     return ds
 
 
-def insolation(dates, lat, lon, S=1., daily=False, enforce_2d=False, clip_zero=True):
+def insolation(dates, lat, lon, S=1., daily=False, enforce_2d=False, clip_zero=True):  # pylint: disable=invalid-name
     """
     Calculate the approximate solar insolation for given dates.
 
@@ -108,6 +108,7 @@ def insolation(dates, lat, lon, S=1., daily=False, enforce_2d=False, clip_zero=T
     :param clip_zero: bool: if True, set values below 0 to 0
     :return: 3d array: insolation (date, lat, lon)
     """
+    # pylint: disable=invalid-name
     if len(lat.shape) != len(lon.shape):
         raise ValueError("'lat' and 'lon' must have the same number of dimensions")
     if len(lat.shape) >= 2 and lat.shape != lon.shape:

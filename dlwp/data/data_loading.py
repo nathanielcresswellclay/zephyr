@@ -39,7 +39,7 @@ def open_time_series_dataset_classic(
     remove_attrs = ['varlev', 'mean', 'std']
     for variable in all_variables:
         file_name = get_file_name(directory, variable)
-        logger.debug(f"open nc dataset {file_name}")
+        logger.debug("open nc dataset %s", file_name)
         ds = xr.open_dataset(file_name, chunks={'sample': batch_size}).isel(varlev=0)
         for attr in remove_attrs:
             try:
@@ -81,7 +81,7 @@ def open_time_series_dataset_classic(
             'channel_c', 'face', 'height', 'width')
         result['constants'] = constants_da
 
-    logger.info(f"merged datasets in {time.time() - merge_time:0.1f} s")
+    logger.info("merged datasets in %0.1f s", time.time() - merge_time)
 
     return result
 
@@ -93,7 +93,7 @@ def open_time_series_dataset_zarr(
         constants: Optional[DefaultDict] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
-        batch_size: int = 32,
+        batch_size: int = 32,  # pylint: disable=unused-argument
         scaling: Optional[DictConfig] = None
 ) -> xr.Dataset:
     output_variables = output_variables or input_variables
@@ -110,7 +110,7 @@ def open_time_series_dataset_zarr(
     datasets = []
     for variable in all_variables:
         file_name = get_file_name(directory, variable)
-        logger.debug(f"open zarr dataset {file_name}")
+        logger.debug("open zarr dataset %s", file_name)
         ds = xr.open_zarr(file_name)
         # Apply log scaling lazily
         if variable in scaling and scaling[variable].get('log_epsilon', None) is not None:
@@ -140,7 +140,7 @@ def open_time_series_dataset_zarr(
             'channel_c', 'face', 'height', 'width')
         result['constants'] = constants_da
 
-    logger.info(f"merged datasets in {time.time() - merge_time:0.1f} s")
+    logger.info("merged datasets in %0.1f s", time.time() - merge_time)
 
     return result
 
@@ -241,7 +241,7 @@ class TimeSeriesDataset(Dataset):
         self._get_scaling_da()
 
     @staticmethod
-    def _convert_time_step(dt):
+    def _convert_time_step(dt):  # pylint: disable=invalid-name
         return pd.Timedelta(hours=dt) if isinstance(dt, int) else pd.Timedelta(dt)
 
     def _get_scaling_da(self):
@@ -262,12 +262,10 @@ class TimeSeriesDataset(Dataset):
     def __len__(self):
         if self.forecast_mode:
             return len(self._forecast_init_indices)
-        else:
-            length = (self.ds.dims['time'] - self._window_length + 1) / self.batch_size
-            if self.drop_last:
-                return int(np.floor(length))
-            else:
-                return int(np.ceil(length))
+        length = (self.ds.dims['time'] - self._window_length + 1) / self.batch_size
+        if self.drop_last:
+            return int(np.floor(length))
+        return int(np.ceil(length))
 
     def _get_time_index(self, item):
         start_index = self._forecast_init_indices[item] if self.forecast_mode else item * self.batch_size
@@ -285,8 +283,7 @@ class TimeSeriesDataset(Dataset):
         if self.forecast_mode:
             timedeltas = np.array(self._input_indices[0] + self._output_indices[0]) * self.data_time_step
             return self.ds.time[time_index[0]].values + timedeltas
-        else:
-            return self.ds.time[slice(*time_index)].values
+        return self.ds.time[slice(*time_index)].values
 
     def __getitem__(self, item):
         if item < 0:
@@ -302,7 +299,7 @@ class TimeSeriesDataset(Dataset):
         if not self.forecast_mode:
             target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
                             self.target_scaling['std']).compute()
-        logger.log(5, f"loaded batch data in {time.time() - load_time:0.2f} s")
+        logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
 
         compute_time = time.time()
         # Insolation
@@ -336,5 +333,4 @@ class TimeSeriesDataset(Dataset):
 
         if self.forecast_mode:
             return inputs_result
-        else:
-            return inputs_result, targets
+        return inputs_result, targets
