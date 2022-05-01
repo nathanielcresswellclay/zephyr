@@ -30,12 +30,12 @@ def convert_file(args, input_file, chunking):
             output_file = f"{args.output_prefix}{output_file}"
     output_file = os.path.join(args.output_directory, output_file)
     if os.path.exists(output_file) and not args.overwrite:
-        logger.warning(f"output zarr group {output_file} already exists")
+        logger.warning("output zarr group %s already exists", output_file)
         return
 
     # Open original netCDF file
     open_time = time.time()
-    logger.info(f"open netCDF file {input_file}")
+    logger.info("open netCDF file %s", input_file)
     # Open the data file once first to determine whether this file has the correct time dimension. Constants files do
     # not have the time dimension.
     ds = xr.open_dataset(input_file)
@@ -51,7 +51,7 @@ def convert_file(args, input_file, chunking):
         if key not in ds.dims:
             raise ParameterConfigError(f"chunking key '{key}' not found in data dimensions {tuple(ds.dims.keys())}")
     ds = to_chunked_dataset(ds, chunking)
-    logger.debug(f"opened file in {time.time() - open_time:0.1f} s")
+    logger.debug("opened file in %0.1f s", time.time() - open_time)
 
     # Conversions applied to the file
     #   1. re-format to new schema
@@ -82,18 +82,18 @@ def convert_file(args, input_file, chunking):
         encode_time = time.time()
         logger.info("computing variable int encoding")
         ds = encode_variables_as_int(ds, 'int16')
-        logger.debug(f"computed variable int encoding in {time.time() - encode_time:0.1f} s")
+        logger.debug("computed variable int encoding in %0.1f s", time.time() - encode_time)
     compressor = zarr.Blosc(cname=args.comp_method, clevel=args.comp_level)
     for var in ds.data_vars.keys():
         ds[var].encoding['compressor'] = compressor
 
     # Output new zarr group
     write_time = time.time()
-    logger.info(f"writing zarr file {output_file}")
+    logger.info("writing zarr file %s", output_file)
     ds.to_zarr(output_file, mode='w', compute=True)
-    logger.debug(f"wrote file in {time.time() - write_time:0.1f} s")
+    logger.debug("wrote file in %0.1f s", time.time() - write_time)
 
-    logger.info(f"total time for converting data file {output_file}: {time.time() - total_time:0.1f} s")
+    logger.info("total time for converting data file %s: %0.1f s", output_file, time.time() - total_time)
 
 
 def main(args):
@@ -107,16 +107,16 @@ def main(args):
             value = int(value)
             chunking[key] = value
         except (IndexError, ValueError, TypeError):
-            logger.error(f"invalid chunking dimension specified (expects dim=[int], got '{dim}'")
+            logger.error("invalid chunking dimension specified (expects dim=[int], got '%s'", dim)
             raise
-    logger.debug(f"chunking: {chunking}")
+    logger.debug("chunking: %s", chunking)
 
     # Find input files
     input_files = glob.glob(os.path.join(args.input_directory, f"{args.prefix}*.nc"))
 
     # Create dask cluster and client
     cluster = LocalCluster(dashboard_address=f':{args.client_port}' if args.client_port is not None else None)
-    client = Client(cluster)  # NoQA: F841
+    client = Client(cluster)  # pylint: disable=unused-variable
 
     # Iterate over files
     for file in input_files:

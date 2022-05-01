@@ -21,7 +21,9 @@ disable=
   consider-using-generator,
   super-with-arguments,
   raise-missing-from,
-  no-value-for-parameter
+  no-value-for-parameter,
+  use-list-literal,
+  fixme
 
 
 [FORMAT]

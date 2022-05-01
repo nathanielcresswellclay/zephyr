@@ -23,16 +23,15 @@ class GeneratorLoss(torch.nn.Module):
     def forward(self, inputs, targets, disc_score):
         if disc_score is not None:
             return self.loss(inputs, targets) + self.disc_score_weight * disc_score
-        else:
-            return self.loss(inputs, targets)
+        return self.loss(inputs, targets)
 
 
 def loss_hinge_disc(score_generated, score_real):
     """Discriminator hinge loss."""
-    l1 = F.relu(1.0 - score_real)
-    loss = torch.mean(l1)
-    l2 = F.relu(1.0 + score_generated)
-    loss += torch.mean(l2)
+    loss_1 = F.relu(1.0 - score_real)
+    loss = torch.mean(loss_1)
+    loss_2 = F.relu(1.0 + score_generated)
+    loss += torch.mean(loss_2)
     return loss
 
 
