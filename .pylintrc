@@ -17,7 +17,11 @@ disable=
   too-many-statements,
   too-many-branches,
   duplicate-code,
-  consider-*
+  consider-iterating-dictionary,
+  consider-using-generator,
+  super-with-arguments,
+  raise-missing-from,
+  no-value-for-parameter
 
 
 [FORMAT]
