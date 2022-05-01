@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 import torch
 from torch.nn.utils.parametrizations import spectral_norm
 
-from dlwp.model.losses import loss_hinge_disc, loss_hinge_gen, LossOnStep
+from dlwp.model.losses import loss_hinge_disc, loss_hinge_gen, loss_wass_disc, loss_wass_gen, LossOnStep
 from dlwp.model.models.base import BaseModel
 from dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
 from dlwp.model.models.unet import IterativeUnet
@@ -35,7 +35,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             disc_steps_per_iter: int = 2,
             disc_start_epoch: int = 0,
             disc_loss_in_validation: bool = False,
-            gradient_clip_val: Optional[float] = None
+            gradient_clip_val: Optional[float] = None,
+            use_wgan_loss: bool = False
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
@@ -67,6 +68,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         :param disc_loss_in_validation: if True, includes the discriminator component of loss in validation
         :param gradient_clip_val: norm float value for gradient clipping, normally passed to Trainer but implemented
             manually in this manual optimization model
+        :param use_wgan_loss: if True, use Wasserstein GAN loss formulation instead of hinge
         """
         super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
@@ -81,6 +83,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.disc_start_epoch = disc_start_epoch
         self.disc_loss_in_validation = disc_loss_in_validation
         self.gradient_clip_val = gradient_clip_val
+        self.use_wgan_loss = use_wgan_loss
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -116,6 +119,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.configure_metrics()
 
         self.global_iteration = 0
+
+        # Select appropriate losses
+        self.loss_disc = loss_wass_disc if self.use_wgan_loss else loss_hinge_disc
+        self.loss_gen = loss_wass_gen if self.use_wgan_loss else loss_hinge_gen
 
         # Important: This property activates manual optimization.
         self.automatic_optimization = False
@@ -177,7 +184,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
                 # Make a prediction with the generator. Must make at each step because tensors are used in backward().
                 prediction = self(inputs)
                 score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
-                discriminator_loss = loss_hinge_disc(score_generated, score_real)
+                discriminator_loss = self.loss_disc(score_generated, score_real)
                 d_opt.zero_grad()
                 self.manual_backward(discriminator_loss)
                 if self.gradient_clip_val is not None:
@@ -192,7 +199,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         # be necessary. Maybe a batch norm or something like that.
         if self.current_epoch >= self.disc_start_epoch:
             score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
-            generator_disc_loss = loss_hinge_gen(score_generated)
+            generator_disc_loss = self.loss_gen(score_generated)
         else:
             generator_disc_loss = None
         generator_loss = self.loss(prediction, targets, generator_disc_loss)
@@ -213,10 +220,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         outputs = self(inputs)
         if self.current_epoch >= self.disc_start_epoch and self.disc_loss_in_validation:
             _, score_generated = self._score_discriminator(inputs, targets, outputs)
-            disc_loss = loss_hinge_gen(score_generated)
+            disc_score = self.loss_gen(score_generated)
         else:
-            disc_loss = None
-        loss = self.loss(outputs, targets, disc_loss)
+            disc_score = None
+        loss = self.loss(outputs, targets, disc_score)
         self.log('val_loss', loss, prog_bar=True, sync_dist=True, batch_size=self.batch_size)
 
         for m, metric in self.metrics.items():
