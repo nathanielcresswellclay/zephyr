@@ -10,7 +10,7 @@ _recursive_: false
 discriminator:
   _target_: dlwp.model.models.dgmr.TemporalDiscriminator
   num_layers: 3
-  internal_channels: 8
+  internal_channels: 6
   keep_time_dim: false
   add_polar_layer: true
 input_time_dim: ${data.input_time_dim}
