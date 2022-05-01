@@ -214,8 +214,7 @@ class IterativeUnet(torch.nn.Module):
             outputs.append(self._reshape_outputs(self.decoder(hidden_states)))
         if output_only_last:
             return outputs[-1]
-        else:
-            return torch.cat(outputs, dim=1)
+        return torch.cat(outputs, dim=1)
 
 
 class UnetEncoder(torch.nn.Module):

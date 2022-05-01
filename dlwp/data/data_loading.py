@@ -329,7 +329,7 @@ class TimeSeriesDataset(Dataset):
             inputs_result.append(decoder_inputs)
         if 'constants' in self.ds.data_vars:
             inputs_result.append(self.ds.constants.values)
-        logger.log(5, f"computed batch in {time.time() - compute_time:0.2f} s")
+        logger.log(5, "computed batch in %0.2f s", time.time() - compute_time)
 
         if self.forecast_mode:
             return inputs_result
