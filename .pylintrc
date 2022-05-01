@@ -1,0 +1,32 @@
+[MASTER]
+
+ignore=
+
+
+[MESSAGES CONTROL]
+
+disable=
+  import-error,
+  missing-module-docstring,
+  missing-class-docstring,
+  missing-function-docstring,
+  too-many-locals,
+  too-many-arguments,
+  too-many-instance-attributes,
+  too-few-public-methods,
+  too-many-statements,
+  too-many-branches,
+  duplicate-code,
+  consider-*
+
+
+[FORMAT]
+
+# Maximum number of characters on a single line.
+max-line-length=120
+expected-line-ending-format=LF
+
+
+[BASIC]
+
+good-names=i,j,k,m,n,ds,da,x,y
