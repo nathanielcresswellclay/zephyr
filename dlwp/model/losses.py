@@ -62,5 +62,5 @@ def loss_wass_gen(score_generated):
     :param score_generated: 1-d sequence of scores on generated samples
     :return: Tensor: loss
     """
-    loss = -torch.mean(score_generated)
+    loss = torch.mean(score_generated)
     return loss
