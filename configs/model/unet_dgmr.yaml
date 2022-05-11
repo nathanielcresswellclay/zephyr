@@ -13,6 +13,7 @@ discriminator:
   internal_channels: 6
   keep_time_dim: false
   add_polar_layer: true
+  final_activation: null
 input_time_dim: ${data.input_time_dim}
 output_time_dim: ${data.output_time_dim}
 cube_dim: ${data.cube_dim}
@@ -21,7 +22,7 @@ disc_steps_per_iter: 1
 disc_start_epoch: 0
 disc_loss_in_validation: false
 gradient_clip_val: null
-use_wgan_loss: false
+gan_loss_type: hinge
 
 # Parameters automatically overridden in train code
 input_channels: 6
