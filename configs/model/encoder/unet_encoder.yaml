@@ -10,5 +10,6 @@ pooling_type: torch.nn.MaxPool2d
 pooling: 2
 activation:
   _target_: torch.nn.LeakyReLU
+  cap_value: 10.
 add_polar_layer: true
 flip_north_pole: true

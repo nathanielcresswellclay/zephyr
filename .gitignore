@@ -111,3 +111,6 @@ assets/
 # Added for this project
 .idea
 .idea/
+
+# Nohup output files
+nohup*
