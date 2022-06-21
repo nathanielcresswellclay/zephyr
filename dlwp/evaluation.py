@@ -65,7 +65,7 @@ class ForecastEval(object):
                from the CubeSphere 
         """
 
-        # check inputs 
+        # check inputs
         if forecast_file is None or eval_variable is None:
             print('please provide a forecast file and evaluation variable')
             raise NameError
@@ -111,10 +111,10 @@ class ForecastEval(object):
                 self._forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
                 if self.verbose:
                     print('Mapping forecast to a Lat-Lon mesh for evaluation')
-                self._forecast_da_LL = convert_to_ll(self._forecast_da,
-                                                     self.cs_config['path_to_remapper'],
-                                                     self.cs_config['map_files'],
-                                                     self.eval_var)
+                self.forecast_da_LL = convert_to_ll(self._forecast_da,
+                                                    self.cs_config['path_to_remapper'],
+                                                    self.cs_config['map_files'],
+                                                    self.eval_var)
             else: 
                 print('%s was not found, ForecastEval was not able to initialize\
                        around a forecast.' % forecast_file)
