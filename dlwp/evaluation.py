@@ -3,10 +3,10 @@ import pandas as pd
 import xarray as xr
 import os
 from tqdm import tqdm
-from datetime import datetime
 from dlwp.remap import CubeSphereRemap
 
-def convert_to_LL(da,path_to_remapper,map_files,var_name):
+
+def convert_to_ll(da, path_to_remapper, map_files, var_name):
     """
     Map ds from CS to LL mesh
 
@@ -24,13 +24,13 @@ def convert_to_LL(da,path_to_remapper,map_files,var_name):
     csr = CubeSphereRemap(path_to_remapper=path_to_remapper)
     csr.assign_maps(*map_files)
 
-    #create netcdf from ds to go into remapper 
+    # create netcdf from ds to go into remapper
     da.load().to_netcdf('cs_data.nc')
     
     # map CS data to intermediate file
-    csr.convert_from_faces('cs_data.nc','tmp_data.nc')
+    csr.convert_from_faces('cs_data.nc', 'tmp_data.nc')
     # map to LL
-    csr.inverse_remap('tmp_data.nc','ll_data.nc','--var',var_name)
+    csr.inverse_remap('tmp_data.nc', 'll_data.nc')
     
     ll_da = xr.open_dataset('ll_data.nc')[var_name].load()
     
@@ -41,18 +41,14 @@ def convert_to_LL(da,path_to_remapper,map_files,var_name):
 
     return ll_da
 
+
 class ForecastEval(object):
     
     """
-    ForecastEval is an object designed to painless evaluation of 
-    forecasts produced by a DLWP model 
+    ForecastEval is an object designed to painless evaluation of forecasts produced by a DLWP model
     """
     
-    def __init__(self,forecast_file=None,eval_variable=None,verbose=True,
-                 cs_config={'path_to_remapper':'/home/disk/brume/nacc/tempestremap/bin',
-                            'map_files':('/home/disk/brass/nacc/map_files/O1/map_LL121x240_CS64.nc',
-                                         '/home/disk/brass/nacc/map_files/O1/map_CS64_LL121x240.nc')
-                            }):
+    def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None):
         
         """
         Initialize ForecastEval object. 
@@ -68,60 +64,66 @@ class ForecastEval(object):
                a dictionary that configures the remap of the forecast and verification
                from the CubeSphere 
         """
+
         # check inputs 
         if forecast_file is None or eval_variable is None:
             print('please provide a forecast file and evaluation variable')
             raise NameError
 
         # initialize verbosity
-        self.verbose=verbose
+        self.verbose = verbose
  
         # initialize verification attributes 
-        self._verification_file = None
-        self._verification_da = None
-        self._verification_da_LL = None
-        self._eval_var = eval_variable
-        self._mse = None
+        self.verification_file = None
+        self.verification_da = None
+        self.verification_da_LL = None
+        self.eval_var = eval_variable
+        self.mse = None
         self._scaled = False
         self._valid_inits = None 
 
         # initialize forecast attributes and configuration variables
-        self._forecast_file = forecast_file  
-        self._forecast_da = None
-        self._forecast_da_LL = None
-        self._init_times = None
-        self._forecast_range = None
-        self._num_forecast_steps = None
-        self._forecast_dt = None
-        self._verification_range = None
+        self.forecast_file = forecast_file
+        self.forecast_da = None
+        self.forecast_da_LL = None
+        self.init_times = None
+        self.forecast_range = None
+        self.num_forecast_steps = None
+        self.forecast_dt = None
+        self.verification_range = None
        
         # initialize configuration of CubeSphereRemap
-        self._cs_config = cs_config 
+        if cs_config is None:
+            self.cs_config = {'path_to_remapper': '/home/disk/brume/nacc/tempestremap/bin',
+                              'map_files': ('/home/disk/brass/nacc/map_files/O1/map_LL121x240_CS64.nc',
+                                            '/home/disk/brass/nacc/map_files/O1/map_CS64_LL121x240.nc')}
+        else:
+            self.cs_config = cs_config
 
         # initialize forecast around file or configuration if given
-        if self._forecast_file is not None: 
+        if self.forecast_file is not None:
             
-            if os.path.isfile(self._forecast_file):
+            if os.path.isfile(self.forecast_file):
                 self._get_metadata_from_file()
                 if self.verbose:
-                    print('Initialized ForecastEval around file %s for %s' % (self._forecast_file,
-                                                                              self._eval_var))
-                self._forecast_da = xr.open_dataset(forecast_file)[self._eval_var]
+                    print('Initialized ForecastEval around file %s for %s' % (self.forecast_file,
+                                                                              self.eval_var))
+                self._forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
                 if self.verbose:
-                    print('Mapping forecast to a Lat-Lon mesh for evaluaiton')
-                self._forecast_da_LL = convert_to_LL(self._forecast_da,                     
-                                                     self._cs_config['path_to_remapper'], 
-                                                     self._cs_config['map_files'],       
-                                                     self._eval_var)                      
+                    print('Mapping forecast to a Lat-Lon mesh for evaluation')
+                self._forecast_da_LL = convert_to_ll(self._forecast_da,
+                                                     self.cs_config['path_to_remapper'],
+                                                     self.cs_config['map_files'],
+                                                     self.eval_var)
             else: 
                 print('%s was not found, ForecastEval was not able to initialize\
-                       around a forecast.' % sel._forecast_file)        
+                       around a forecast.' % forecast_file)
     
-    def generate_verification_from_predictor(self,predictor_file=None):
+    def generate_verification_from_predictor(self, predictor_file=None):
         """
-        use predi file to generate a verification ds 
+        use predictor file to generate a verification ds
 
-        :param predictor_file: string: 
+        :param: string: predictor_file:
               File with path to predictor file around which a verification dataset will be 
               generated. 
         """
@@ -130,7 +132,7 @@ class ForecastEval(object):
             print('Please indicate a predictor file')
             return
         # Assign file used in verification 
-        self._verification_file=predictor_file
+        self.verification_file = predictor_file
         # Find init dates that correspond to forecasted times sampled in the given predictor file
         valid_inits = self._find_valid_inits(xr.open_dataset(predictor_file).sample.values) 
         # Initialize array to hold verification data in forecast format 
@@ -139,99 +141,97 @@ class ForecastEval(object):
             print('Generating verification dataset from predictor_file: %s' % predictor_file)
         for i in tqdm(range(len(valid_inits))):
             # create array of dates corresponding to forecast hours
-            samples = pd.date_range(start=valid_inits[i],                             
-                                    end=valid_inits[i]+(self._num_forecast_steps-1)*\
-                                                            self._forecast_dt,             
+            samples = pd.date_range(start=valid_inits[i],
+                                    end=valid_inits[i]+(self._num_forecast_steps-1) *
+                                    self._forecast_dt,
                                     freq=pd.Timedelta(self._forecast_dt))                    
             # populate verif array with samples from date array above
-            verif[i]=xr.open_dataset(predictor_file).predictors.sel(sample=samples).values.squeeze()
-        self._verification_da = verif
+            verif[i] = xr.open_dataset(predictor_file).predictors.sel(sample=samples).values.squeeze()
+        self.verification_da = verif
         if self.verbose:
-            print('remapping verificatoin DataArray from the CS using config: %s' % str(self._cs_config))
-        self._verification_da_LL = convert_to_LL(self._verification_da,
-                                                 self._cs_config['path_to_remapper'],
-                                                 self._cs_config['map_files'],
-                                                 self._eval_var)
- 
-    def get_verification(self):
-        """
-        return the the verification da
-        """
-        return self._verification_da_LL
+            print('remapping verification DataArray from the CS using config: %s' % str(self.cs_config))
+        self.verification_da_LL = convert_to_ll(self.verification_da,
+                                                self.cs_config['path_to_remapper'],
+                                                self.cs_config['map_files'],
+                                                self.eval_var)
 
-    def set_verification(self,verif):
+    def set_verification(self, verif):
         """
-        set verification from incoming da. This is useful if comparing several forecats from 
-        different models and you want to avoid generating the verification from data everytime.  
+        set verification from incoming da. This is useful if comparing several forecasts from
+        different models; you want to avoid generating the verification from data everytime.
 
-        :param: verif: xarray.DataArray
+        :param:  xarray.DataArray: verif:
             dataarray of formated verification 
         """
-        self._verification_da_LL = verif  
+        self.verification_da_LL = verif
 
     def scale_das(self):
         """
         Scale the incoming DataArray with mean and std defined in predictor file. This function will 
         change as we update scaling conventions.
         """
-        if self._scaled == True:
+        if self._scaled is True:
             print('DataArrays have already been scaled')
         else:
             if self.verbose:
                 print('Attempting to extract scaling statistics from verif file')
             # Attempt to extract the mean and std from verification file  
-            mean = xr.open_dataset(self._verification_file)['mean'].values[0]
-            std  = xr.open_dataset(self._verification_file)['std'].values[0]
+            mean = xr.open_dataset(self.verification_file)['mean'].values[0]
+            std = xr.open_dataset(self.verification_file)['std'].values[0]
             if self.verbose:
                 print('Scaling verification_da_LL and forecast_da_LL')           
-            self._verification_da_LL=(self._verification_da_LL*std)+mean
-            self._forecast_da_LL=(self._forecast_da_LL*std)+mean
+            self.verification_da_LL = (self.verification_da_LL*std)+mean
+            self.forecast_da_LL = (self.forecast_da_LL*std)+mean
             self._scaled = True
-    
-    def get_mse(self):
+
+    def get_mse(self, mean=True):
         """
         return the MSE of the forecast against the verification
         """
         # calculate the weights to apply to the MSE
-        weights = np.cos(np.deg2rad(self._verification_da_LL.lat.values)) 
+        weights = np.cos(np.deg2rad(self.verification_da_LL.lat.values))
         weights /= weights.mean()        
         # enforce proper order of dimensions in data arrays to avoid incorrect calculation
-        f = self._forecast_da_LL.transpose('step','time','lon','lat')
-        verif = self._verification_da_LL.transpose('step','time','lon','lat')
+        f = self.forecast_da_LL.transpose('step', 'time', 'lon', 'lat')
+        verif = self.verification_da_LL.transpose('step', 'time', 'lon', 'lat')
         # reshape weights to be compatible with verif array
-        weights = np.expand_dims(np.expand_dims(np.expand_dims(weights,axis=0),axis=0),axis=0) 
+        weights = np.expand_dims(np.expand_dims(np.expand_dims(weights, axis=0), axis=0), axis=0)
         # only calculate error over time available in verification
-        valid_inits = self._verification_da_LL.time
+        valid_inits = self.verification_da_LL.time
         # calculate mse
-        return np.nanmean((verif.values-f.sel(time=valid_inits).values)\
-                          **2. * weights, axis=(1,2,3))
-    
-    def get_rmse(self):
+        if mean:
+            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                              ** 2. * weights, axis=(1, 2, 3))
+        else:
+            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                              ** 2. * weights, axis=(2, 3))
+
+    def get_rmse(self, mean=True):
         """
         return the RMSE of forecast against verification
         """
-        return np.sqrt(self.get_mse())
+        return np.sqrt(self.get_mse(mean=mean))
     
     def get_f_hour(self):
         """
         return an array with the leadtime of the forecast in hours 
         """
-        f_hour = self._forecast_dt*self._forecast_da_LL.step/(3600*1e9) # convert from nanoseconds to hours
-        f_hour = np.array(f_hour,dtype=float)
-        return(f_hour)
+        f_hour = self._forecast_dt*self._forecast_da_LL.step/(3600*1e9)  # convert from nanoseconds to hours
+        f_hour = np.array(f_hour, dtype=float)
+        return f_hour
 
     def _get_metadata_from_file(self):
         """
         Attempt to extract metatdata from passed file 
         """ 
-        file_ds = xr.open_dataset(self._forecast_file)
+        file_ds = xr.open_dataset(self.forecast_file)
         
-        self._init_times=file_ds.time.values
-        self._forecast_range=file_ds.step[-1].values
-        self._num_forecast_steps=len(file_ds.step)
-        self._forecast_dt=file_ds.step[1].values-file_ds.step[0].values
+        self._init_times = file_ds.time.values
+        self._forecast_range = file_ds.step[-1].values
+        self._num_forecast_steps = len(file_ds.step)
+        self._forecast_dt = file_ds.step[1].values-file_ds.step[0].values
 
-    def _find_valid_inits(self,sample_array):
+    def _find_valid_inits(self, sample_array):
         """
         Find initializatio dates whose associated forecast samples are a subset of 
         sample_array
@@ -242,14 +242,14 @@ class ForecastEval(object):
         valid_inits = []
         for i in range(len(self._init_times)):
             samples = pd.date_range(start=self._init_times[i],                            
-                                    end=self._init_times[i]+(self._num_forecast_steps-1)*
-                                                            self._forecast_dt,           
+                                    end=self._init_times[i]+(self._num_forecast_steps-1) *
+                                    self._forecast_dt,
                                     freq=pd.Timedelta(self._forecast_dt))                
             
-            if np.all(np.in1d(samples,sample_array)):
+            if np.all(np.in1d(samples, sample_array)):
                 valid_inits.append(self._init_times[i])
             else: 
                 if self.verbose:
-                    print('forecast initialized at %s can not be verified with this predictor file; omitting.' % self._init_times[i])
+                    print('forecast initialized at %s can not be verified with this predictor file; omitting.'
+                          % self._init_times[i])
         return valid_inits
-
