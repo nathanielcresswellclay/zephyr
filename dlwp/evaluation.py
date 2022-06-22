@@ -108,13 +108,15 @@ class ForecastEval(object):
                 if self.verbose:
                     print('Initialized ForecastEval around file %s for %s' % (self.forecast_file,
                                                                               self.eval_var))
-                self._forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
+                self.forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
                 if self.verbose:
                     print('Mapping forecast to a Lat-Lon mesh for evaluation')
-                self.forecast_da_LL = convert_to_ll(self._forecast_da,
+                # map to lat lon mesh and add proper coordinates
+                self.forecast_da_LL = convert_to_ll(self.forecast_da,
                                                     self.cs_config['path_to_remapper'],
                                                     self.cs_config['map_files'],
-                                                    self.eval_var)
+                                                    self.eval_var).assign_coords(time=self.forecast_da.time,
+                                                                                 step=self.forecast_da.step)
             else: 
                 print('%s was not found, ForecastEval was not able to initialize\
                        around a forecast.' % forecast_file)
@@ -131,20 +133,22 @@ class ForecastEval(object):
         if predictor_file is None:
             print('Please indicate a predictor file')
             return
-        # Assign file used in verification 
+        # Assign file used in verification
+        if self.verification_file is not None:
+            print('Replacing OLD verification dataset: %s' % self.verification_file)
         self.verification_file = predictor_file
         # Find init dates that correspond to forecasted times sampled in the given predictor file
         valid_inits = self._find_valid_inits(xr.open_dataset(predictor_file).sample.values) 
         # Initialize array to hold verification data in forecast format 
-        verif = xr.zeros_like(self._forecast_da.sel(time=valid_inits))*np.nan
+        verif = xr.zeros_like(self.forecast_da.sel(time=valid_inits))*np.nan
         if self.verbose: 
             print('Generating verification dataset from predictor_file: %s' % predictor_file)
         for i in tqdm(range(len(valid_inits))):
             # create array of dates corresponding to forecast hours
             samples = pd.date_range(start=valid_inits[i],
-                                    end=valid_inits[i]+(self._num_forecast_steps-1) *
-                                    self._forecast_dt,
-                                    freq=pd.Timedelta(self._forecast_dt))                    
+                                    end=valid_inits[i]+(self.num_forecast_steps-1) *
+                                    self.forecast_dt,
+                                    freq=pd.Timedelta(self.forecast_dt))
             # populate verif array with samples from date array above
             verif[i] = xr.open_dataset(predictor_file).predictors.sel(sample=samples).values.squeeze()
         self.verification_da = verif
@@ -154,6 +158,54 @@ class ForecastEval(object):
                                                 self.cs_config['path_to_remapper'],
                                                 self.cs_config['map_files'],
                                                 self.eval_var)
+
+    def generate_verification_from_era5(self, era5_file=None, variable_name=None, level=None, conversion=None,
+                                        interpolation_method='linears'):
+        """
+        use raw EA5 data to create a verification field
+
+        :param: string: era5_field:
+            path and name of raw EA5 dataset in netcdf form
+        :param: string: variable_name:
+            name of evaluation variable within ERA5 dataset  above
+        :param: float: level:
+            level of evaluation variable
+        :param: float: conversion:
+            unit conversion factor
+        :param: string: interpolation method:
+            method used to interpolate era5 data to same mesh as forecast
+        """
+        # Check inputs
+        if era5_file is None:
+            print('Please indicate a ERA5 file')
+            return
+        # Assign file used in verification
+        if self.verification_file is not None:
+            print('Replacing OLD verification dataset: %s' % self.verification_file)
+        self.verification_file = era5_file
+        # Find init dates that correspond to forecasted times sampled in the given predictor file
+        valid_inits = self._find_valid_inits(xr.open_dataset(era5_file).time.values)
+        # Initialize array to hold verification data in forecast format
+        verif = xr.zeros_like(self.forecast_da_LL.sel(time=valid_inits))*np.nan
+        if self.verbose:
+            print('Generating verification dataset from era5_file: %s' % era5_file)
+
+        for i in tqdm(range(len(valid_inits))):
+            # create array of dates corresponding to forecast hours
+            samples = pd.date_range(start=valid_inits[i],
+                                    end=valid_inits[i] + (self.num_forecast_steps - 1) * self.forecast_dt,
+                                    freq=pd.Timedelta(self.forecast_dt))
+            # populate verif array with samples from date array above
+            tmp = xr.open_dataset(era5_file)[variable_name].sel(time=samples, level=level)
+            verif[i] = tmp.values.squeeze()
+#            verif[i] = tmp.interp(latitude=self.forecast_da_LL.lat, longitude=self.forecast_da_LL,
+#                                  method=interpolation_method).values.squeeze()
+
+        if conversion is not None:
+            print('converting verification array using %s factor' % str(conversion))
+            verif = verif*conversion
+
+        self.verification_da_LL = verif
 
     def set_verification(self, verif):
         """
@@ -216,7 +268,7 @@ class ForecastEval(object):
         """
         return an array with the leadtime of the forecast in hours 
         """
-        f_hour = self._forecast_dt*self._forecast_da_LL.step/(3600*1e9)  # convert from nanoseconds to hours
+        f_hour = self.forecast_da_LL.step/(3600*1e9)  # convert from nanoseconds to hours
         f_hour = np.array(f_hour, dtype=float)
         return f_hour
 
@@ -226,10 +278,10 @@ class ForecastEval(object):
         """ 
         file_ds = xr.open_dataset(self.forecast_file)
         
-        self._init_times = file_ds.time.values
-        self._forecast_range = file_ds.step[-1].values
-        self._num_forecast_steps = len(file_ds.step)
-        self._forecast_dt = file_ds.step[1].values-file_ds.step[0].values
+        self.init_times = file_ds.time.values
+        self.forecast_range = file_ds.step[-1].values
+        self.num_forecast_steps = len(file_ds.step)
+        self.forecast_dt = file_ds.step[1].values-file_ds.step[0].values
 
     def _find_valid_inits(self, sample_array):
         """
@@ -240,16 +292,16 @@ class ForecastEval(object):
              samples 
         """
         valid_inits = []
-        for i in range(len(self._init_times)):
-            samples = pd.date_range(start=self._init_times[i],                            
-                                    end=self._init_times[i]+(self._num_forecast_steps-1) *
-                                    self._forecast_dt,
-                                    freq=pd.Timedelta(self._forecast_dt))                
+        for i in range(len(self.init_times)):
+            samples = pd.date_range(start=self.init_times[i],
+                                    end=self.init_times[i]+(self.num_forecast_steps-1) *
+                                    self.forecast_dt,
+                                    freq=pd.Timedelta(self.forecast_dt))
             
             if np.all(np.in1d(samples, sample_array)):
-                valid_inits.append(self._init_times[i])
+                valid_inits.append(self.init_times[i])
             else: 
                 if self.verbose:
                     print('forecast initialized at %s can not be verified with this predictor file; omitting.'
-                          % self._init_times[i])
+                          % self.init_times[i])
         return valid_inits
