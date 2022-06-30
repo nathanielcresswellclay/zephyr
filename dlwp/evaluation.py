@@ -196,7 +196,10 @@ class ForecastEval(object):
                                     end=valid_inits[i] + (self.num_forecast_steps - 1) * self.forecast_dt,
                                     freq=pd.Timedelta(self.forecast_dt))
             # populate verif array with samples from date array above
-            tmp = xr.open_dataset(era5_file)[variable_name].sel(time=samples, level=level)
+            if level is not None:
+                tmp = xr.open_dataset(era5_file)[variable_name].sel(time=samples, level=level)
+            else:
+                tmp = xr.open_dataset(era5_file)[variable_name].sel(time=samples)
             verif[i] = tmp.values.squeeze()
 #            verif[i] = tmp.interp(latitude=self.forecast_da_LL.lat, longitude=self.forecast_da_LL,
 #                                  method=interpolation_method).values.squeeze()
