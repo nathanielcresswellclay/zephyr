@@ -39,3 +39,54 @@ def loss_hinge_gen(score_generated):
     """Generator hinge loss."""
     loss = -torch.mean(score_generated)
     return loss
+
+
+def loss_wass_disc(score_generated, score_real):
+    """
+    Discriminator Wasserstein loss.
+
+    :param score_generated: 1-d sequence of scores on generated samples
+    :param score_real: 1-d sequence of scores on real samples
+    :return: Tensor: loss
+    """
+    gen_samples, real_samples = len(score_generated), len(score_real)
+    loss_1 = (torch.mean(score_real) * real_samples)
+    loss_2 = (torch.mean(score_generated) * -1 * gen_samples)
+    return (loss_1 + loss_2) / (gen_samples + real_samples)
+
+
+def loss_wass_gen(score_generated):
+    """
+    Generator Wasserstein loss.
+
+    :param score_generated: 1-d sequence of scores on generated samples
+    :return: Tensor: loss
+    """
+    loss = torch.mean(score_generated)
+    return loss
+
+
+def loss_wass_sig_disc(score_generated, score_real):
+    """
+    Discriminator Wasserstein loss with sigmoid compression.
+
+    :param score_generated: 1-d sequence of scores on generated samples
+    :param score_real: 1-d sequence of scores on real samples
+    :return: Tensor: loss
+    """
+    gen_samples, real_samples = len(score_generated), len(score_real)
+    total_samples = gen_samples + real_samples
+    loss_1 = torch.sigmoid(torch.mean(score_real) * 2 * real_samples / total_samples)
+    loss_2 = torch.sigmoid(torch.mean(score_generated) * -2 * gen_samples / total_samples)
+    return loss_1 + loss_2
+
+
+def loss_wass_sig_gen(score_generated):
+    """
+    Generator Wasserstein loss with sigmoid compression.
+
+    :param score_generated: 1-d sequence of scores on generated samples
+    :return: Tensor: loss
+    """
+    loss = torch.sigmoid(torch.mean(score_generated))
+    return loss

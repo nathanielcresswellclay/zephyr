@@ -2,12 +2,13 @@ from abc import ABC
 import logging
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
-from hydra.utils import instantiate
+from hydra.utils import get_method, instantiate
 from omegaconf import DictConfig
 import torch
 from torch.nn.utils.parametrizations import spectral_norm
 
-from dlwp.model.losses import loss_hinge_disc, loss_hinge_gen, LossOnStep
+from dlwp.model.losses import loss_hinge_disc, loss_hinge_gen, loss_wass_disc, loss_wass_gen, loss_wass_sig_disc, \
+    loss_wass_sig_gen, LossOnStep
 from dlwp.model.models.base import BaseModel
 from dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
 from dlwp.model.models.unet import IterativeUnet
@@ -16,6 +17,18 @@ logger = logging.getLogger(__name__)
 
 
 class CubeSphereUnetDGMR(BaseModel, ABC):
+    GENERATOR_LOSS_TYPE = {
+        'hinge': loss_hinge_gen,
+        'wasserstein': loss_wass_gen,
+        'wass_sigmoid': loss_wass_sig_gen
+    }
+
+    DISCRIMINATOR_LOSS_TYPE = {
+        'hinge': loss_hinge_disc,
+        'wasserstein': loss_wass_disc,
+        'wass_sigmoid': loss_wass_sig_disc
+    }
+
     def __init__(
             self,
             encoder: DictConfig,
@@ -35,7 +48,8 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
             disc_steps_per_iter: int = 2,
             disc_start_epoch: int = 0,
             disc_loss_in_validation: bool = False,
-            gradient_clip_val: Optional[float] = None
+            gradient_clip_val: Optional[float] = None,
+            gan_loss_type: str = 'hinge'
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
@@ -67,6 +81,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         :param disc_loss_in_validation: if True, includes the discriminator component of loss in validation
         :param gradient_clip_val: norm float value for gradient clipping, normally passed to Trainer but implemented
             manually in this manual optimization model
+        :param gan_loss_type: type of loss function used for the GAN loss. Options are
+            - hinge: hinge loss
+            - wasserstein: wasserstein GAN loss
+            - wass_sigmoid: wasserstein GAN loss with sigmoid compression
         """
         super().__init__(loss, batch_size=batch_size)
         self.optimizer_cfg = optimizer
@@ -81,6 +99,9 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.disc_start_epoch = disc_start_epoch
         self.disc_loss_in_validation = disc_loss_in_validation
         self.gradient_clip_val = gradient_clip_val
+        self.gan_loss_type = gan_loss_type
+        if gan_loss_type not in CubeSphereUnetDGMR.GENERATOR_LOSS_TYPE:
+            raise ValueError(f"'gan_loss_type' must be one of {list(CubeSphereUnetDGMR.GENERATOR_LOSS_TYPE.keys())}")
 
         # Example input arrays. Expects from data loader a sequence of (inputs, [decoder_inputs, [constants]])
         # inputs: [B, input_time_dim, input_channels, F, H, W]
@@ -116,6 +137,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         self.configure_metrics()
 
         self.global_iteration = 0
+
+        # Select appropriate losses
+        self.loss_disc = CubeSphereUnetDGMR.DISCRIMINATOR_LOSS_TYPE[self.gan_loss_type]
+        self.loss_gen = CubeSphereUnetDGMR.GENERATOR_LOSS_TYPE[self.gan_loss_type]
 
         # Important: This property activates manual optimization.
         self.automatic_optimization = False
@@ -177,7 +202,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
                 # Make a prediction with the generator. Must make at each step because tensors are used in backward().
                 prediction = self(inputs)
                 score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
-                discriminator_loss = loss_hinge_disc(score_generated, score_real)
+                discriminator_loss = self.loss_disc(score_generated, score_real)
                 d_opt.zero_grad()
                 self.manual_backward(discriminator_loss)
                 if self.gradient_clip_val is not None:
@@ -192,7 +217,7 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         # be necessary. Maybe a batch norm or something like that.
         if self.current_epoch >= self.disc_start_epoch:
             score_real, score_generated = self._score_discriminator(inputs, targets, prediction)
-            generator_disc_loss = loss_hinge_gen(score_generated)
+            generator_disc_loss = self.loss_gen(score_generated)
         else:
             generator_disc_loss = None
         generator_loss = self.loss(prediction, targets, generator_disc_loss)
@@ -213,10 +238,10 @@ class CubeSphereUnetDGMR(BaseModel, ABC):
         outputs = self(inputs)
         if self.current_epoch >= self.disc_start_epoch and self.disc_loss_in_validation:
             _, score_generated = self._score_discriminator(inputs, targets, outputs)
-            disc_loss = loss_hinge_gen(score_generated)
+            disc_score = self.loss_gen(score_generated)
         else:
-            disc_loss = None
-        loss = self.loss(outputs, targets, disc_loss)
+            disc_score = None
+        loss = self.loss(outputs, targets, disc_score)
         self.log('val_loss', loss, prog_bar=True, sync_dist=True, batch_size=self.batch_size)
 
         for m, metric in self.metrics.items():
@@ -317,7 +342,8 @@ class TemporalDiscriminator(torch.nn.Module):
             num_layers: int = 3,
             internal_channels: int = 8,
             keep_time_dim: bool = False,
-            add_polar_layer: bool = True
+            add_polar_layer: bool = True,
+            final_activation: Optional[str] = None
     ):
         super().__init__()
         self.input_channels = input_channels
@@ -325,6 +351,8 @@ class TemporalDiscriminator(torch.nn.Module):
         self.internal_channels = internal_channels
         self.keep_time_dim = keep_time_dim
         self.add_polar_layer = add_polar_layer
+        self.final_activation = get_method(f"torch.nn.functional.{final_activation}") \
+            if final_activation is not None else None
 
         # pylint: disable=invalid-name
         self.d1 = DBlock(
@@ -377,6 +405,7 @@ class TemporalDiscriminator(torch.nn.Module):
         x = self.d2(x)
         # Convert back to B, T, C, F, H, W
         x = torch.permute(x, dims=(0, 2, 1, 3, 4, 5))
+
         # Compute the 2D D-blocks on each time step individually
         representations = []
         for time_step in range(x.size(1)):
@@ -394,10 +423,12 @@ class TemporalDiscriminator(torch.nn.Module):
             rep = torch.mean(rep, dim=-1)
             rep = self.bn(rep)
             rep = self.fc(rep)
-
             representations.append(rep)
-        # The representations are summed together before the ReLU
+
+        # Sum the result for each time stamp
         x = torch.stack(representations, dim=1)
-        # Should be [Batch, N, 1]
         x = torch.sum(x, dim=1)
+        # Final activation
+        if self.final_activation is not None:
+            x = self.final_activation(x)
         return x
