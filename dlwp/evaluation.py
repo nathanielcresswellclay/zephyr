@@ -2,9 +2,21 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import os
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dlwp.remap import CubeSphereRemap
 
+# library of units for each varlev used in DLWP
+# use latex notation for plotting with matplotlib
+varlev_units = {
+    'z500':'m$^2$ s$^{-2}$',
+    'z1000':'m$^2$ s$^{-2}$',
+    'z250':'m$^2$ s$^{-2}$',
+    't850':'K',
+    't2m0':'K',
+    'tau300-700':'m$^2$ s$^{-2}$',
+    'tcwv0':'kg m$^{-2}$',
+}
 
 def convert_to_ll(da, path_to_remapper, map_files, var_name):
     """
@@ -41,11 +53,73 @@ def convert_to_ll(da, path_to_remapper, map_files, var_name):
 
     return ll_da
 
+def rmse_ll(evaluation_directory, forecasts, plot_file):
 
+    """
+    
+    """
+
+    # initialize empty dicitonary to hold RMSE. Keys will be var, values will
+    # be lists with associated RMSE for each forecast
+    rmse = {} 
+    
+    # iterate through forecasts and verify as specified in config  
+    for forecast in forecasts: 
+    
+        print('getting RMSE for configuration:')   
+        print(forecast)
+        
+        for variable in forecast['variables']:
+            
+            f = ForecastEval(forecast_file=forecast['file'],
+                             eval_variable=variable['varlev'],
+                             cs_config=forecast['cs_config'])
+            print('generating verif...')
+            getattr(f,variable['verification_generator'])(**variable['verification_params'])
+            print('done!')
+            if variable['varlev'] not in rmse.keys(): 
+                rmse[variable['varlev']]=[]
+            rmse[variable['varlev']].append({'f_hours': f.get_f_hour(),
+                                             'rmse':f.get_rmse(),
+                                             'plotting':forecast['plotting']})
+
+        rmse_ll_plot(evaluation_directory, rmse, plot_file)
+
+def rmse_ll_plot(evaluation_directory, rmse, plot_file):
+            
+    # create RMSE figure 
+    ncols = int(np.ceil(len(rmse.keys())/3))
+    nrows = int(np.ceil(len(rmse.keys())/ncols))         
+    fig = plt.figure(figsize=(10*ncols,5*nrows))
+    axs = []
+
+    for i, variable in enumerate(rmse.keys()):
+         
+        axs.append(fig.add_subplot(nrows,ncols,i+1)) # matplotlib uses 1-indexing
+        axs[i].set_title(variable,fontsize=15) 
+        axs[i].set_xlabel('Forecast Day',fontsize=15)
+        axs[i].set_ylabel('RMSE ({})'.format(varlev_units[variable]),fontsize=15)
+
+        for var_rmse in rmse[variable]:
+            axs[i].plot(var_rmse['f_hours']/24,var_rmse['rmse'],**var_rmse['plotting'])   
+
+        axs[i].grid()
+    
+    axs[-1].legend(fontsize=15)
+    plt.tight_layout()
+ 
+    plot_path = os.path.join(evaluation_directory,plot_file) 
+    print('Saving plot to {}'.format(plot_path))
+    fig.savefig(plot_path,dpi=300) 
+            
+        
 class ForecastEval(object):
     
     """
-    ForecastEval is an object designed to painless evaluation of forecasts produced by a DLWP model
+    ForecastEval object is designed to take make forecast evaluation easier by 
+    providing methods for analysis of a single field within a forecast. Support
+    for information sharing accross object instances will allow for relatively 
+    painless comparison of forecasts and evaluation of ensembles. 
     """
     
     def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None):
@@ -157,7 +231,8 @@ class ForecastEval(object):
         self.verification_da_LL = convert_to_ll(self.verification_da,
                                                 self.cs_config['path_to_remapper'],
                                                 self.cs_config['map_files'],
-                                                self.eval_var)
+                                                self.eval_var).assign_coords({'time':verif.time,
+                                                                              'step':verif.step})
 
     def generate_verification_from_era5(self, era5_file=None, variable_name=None, level=None, conversion=None,
                                         interpolation_method='linears'):
@@ -177,7 +252,7 @@ class ForecastEval(object):
         """
         # Check inputs
         if era5_file is None:
-            print('Please indicate a ERA5 file')
+            print('Please indicate an ERA5 file')
             return
         # Assign file used in verification
         if self.verification_file is not None:
@@ -220,13 +295,25 @@ class ForecastEval(object):
         """
         self.verification_da_LL = verif
 
-    def scale_das(self):
+    def scale_das(self, scale_file=None, scale_verif=True):
         """
         Scale the incoming DataArray with mean and std defined in predictor file. This function will 
         change as we update scaling conventions.
         """
         if self._scaled is True:
             print('DataArrays have already been scaled')
+        elif scale_file is not None:
+            if self.verbose:
+                print('Attempting to extract scaling statistics from scale file')
+            # Attempt to extract the mean and std from verification file  
+            mean = xr.open_dataset(scale_file)['mean'].values[0]
+            std = xr.open_dataset(scale_file)['std'].values[0]
+            if self.verbose:
+                print('Scaling verification_da_LL and forecast_da_LL')           
+            self.verification_da_LL = (self.verification_da_LL*std)+mean
+            self.forecast_da_LL = (self.forecast_da_LL*std)+mean
+            self._scaled = True
+
         else:
             if self.verbose:
                 print('Attempting to extract scaling statistics from verif file')
@@ -234,9 +321,12 @@ class ForecastEval(object):
             mean = xr.open_dataset(self.verification_file)['mean'].values[0]
             std = xr.open_dataset(self.verification_file)['std'].values[0]
             if self.verbose:
-                print('Scaling verification_da_LL and forecast_da_LL')           
-            self.verification_da_LL = (self.verification_da_LL*std)+mean
+                print('Scaling forecast_da_LL by mean: %s and std: %s' % (str(mean),str(std)))           
             self.forecast_da_LL = (self.forecast_da_LL*std)+mean
+            if scale_verif:
+                if self.verbose:
+                    print('Scaling verification_da_LL by mean: %s and std: %s' % (str(mean),str(std)))           
+                self.verification_da_LL = (self.verification_da_LL*std)+mean
             self._scaled = True
 
     def get_mse(self, mean=True):
