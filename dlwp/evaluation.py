@@ -83,7 +83,7 @@ def rmse_ll(evaluation_directory, forecasts, plot_file):
                                              'rmse':f.get_rmse(),
                                              'plotting':forecast['plotting']})
 
-        rmse_ll_plot(evaluation_directory, rmse, plot_file)
+    rmse_ll_plot(evaluation_directory, rmse, plot_file)
 
 def rmse_ll_plot(evaluation_directory, rmse, plot_file):
             
