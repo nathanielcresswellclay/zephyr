@@ -137,9 +137,13 @@ def inference(args: argparse.Namespace):
     prediction_ds = to_chunked_dataset(prediction_ds, {'time': 1})
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
-
-    output_file = os.path.join(args.output_directory,
-                               f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
+    
+    if args.output_filename is None:
+        output_file = os.path.join(args.output_directory,
+                                   f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
+    else:
+        output_file = os.path.join(args.output_directory,
+                                   args.output_filename+f".{'zarr' if args.to_zarr else 'nc'}")
     logger.info(f"exporting data to {output_file}")
     if args.to_zarr:
         prediction_ds.to_zarr(output_file)
@@ -183,6 +187,8 @@ if __name__ == '__main__':
                         help="Suffix for test data files")
     parser.add_argument('--gpu', type=int, default=0,
                         help="Index of GPU device on which to run model")
+    parser.add_argument('--output-filename',type=str, default=None,
+                        help="output forecast filename")
 
     configure_logging(2)
     run_args = parser.parse_args()

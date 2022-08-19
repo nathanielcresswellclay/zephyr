@@ -40,5 +40,6 @@ overwrite use flag "--overwrite"'.format(config['evaluation_directory']))
         except FileNotFoundError:
             print('creating directory {} to store evaluation'.format(config['evaluation_directory'])) 
         os.mkdir(config['evaluation_directory'])
+        os.chdir(config['evaluation_directory'])
         evaluate(config) 
     
