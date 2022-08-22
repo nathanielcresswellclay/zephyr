@@ -31,7 +31,7 @@ class CubeSphereUnet(BaseModel, ABC):
             batch_size: Optional[int] = None
     ):
         """
-        Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net model on the
+        Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
         cube sphere grid.
 
         :param encoder: dictionary of instantiable parameters for the U-net encoder (see UnetEncoder docs)
@@ -224,6 +224,7 @@ class UnetEncoder(torch.nn.Module):
             n_channels: Sequence = (16, 32, 64),
             convolutions_per_depth: int = 2,
             kernel_size: int = 3,
+            dilations: list = None,
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
             activation: Optional[DictConfig] = None,
@@ -238,6 +239,10 @@ class UnetEncoder(torch.nn.Module):
         self.activation = activation
         self.add_polar_layer = add_polar_layer
         self.flip_north_pole = flip_north_pole
+
+        if dilations is None:
+            # Defaults to [1, 1, 1...] in accordance with the number of unet levels
+            dilations = [1 for _ in range(len(n_channels))]
 
         assert input_channels >= 1
         assert convolutions_per_depth >= 1
@@ -262,9 +267,10 @@ class UnetEncoder(torch.nn.Module):
                     in_channels=old_channels,
                     out_channels=curr_channel,
                     kernel_size=self.kernel_size,
+                    dilation=dilations[n],
                     padding=0
                 ))
-                modules.append(CubeSpherePadding((self.kernel_size - 1) // 2))
+                modules.append(CubeSpherePadding(((self.kernel_size - 1) // 2)*dilations[n]))
                 modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
                                                flip_north_pole=self.flip_north_pole))
                 if self.activation is not None:
@@ -393,3 +399,278 @@ class UnetDecoder(torch.nn.Module):
             if n < len(self.decoder) - 1:
                 x = torch.cat([x, inputs[-2 - n]], dim=1)
         return x
+
+
+class Unet3plusDecoder(torch.nn.Module):
+    def __init__(
+            self,
+            input_channels: Sequence = (16, 32, 64),
+            n_channels: Sequence = (64, 32, 16),
+            output_channels: int = 1,
+            convolutions_per_depth: int = 2,
+            kernel_size: int = 3,
+            dilations: list = None,
+            pooling_type: str = 'torch.nn.MaxPool2d',
+            pooling: int = 2,
+            upsampling_type: str = 'interpolate',
+            upsampling: int = 2,
+            activation: Optional[DictConfig] = None,
+            add_polar_layer: bool = True,
+            flip_north_pole: bool = True
+    ):
+        super().__init__()
+        self.n_channels = n_channels
+        self.kernel_size = kernel_size
+        self.upsampling_type = upsampling_type
+        self.upsampling = upsampling
+        self.activation = activation
+        self.add_polar_layer = add_polar_layer
+        self.flip_north_pole = flip_north_pole
+
+        if dilations is None:
+            # Defaults to [1, 1, 1...] according to the number of unet levels
+            dilations = [1 for _ in range(len(input_channels))]
+        
+        assert output_channels >= 1
+        assert convolutions_per_depth >= 1
+        assert len(input_channels) == len(n_channels)
+        assert kernel_size >= 1 and kernel_size % 2 == 1
+        assert upsampling_type in ['interpolate', 'transpose']
+
+        levels = len(n_channels)  # Depth or number of hierarchies in the unet
+        pow2 = [2**x for x in range(len(input_channels))][::-1]  # i.e. [..., 8, 4, 2, 1]
+
+        input_channels = list(input_channels[::-1])
+        self.decoder = []
+        for n, curr_channel in enumerate(n_channels):
+            # Only do one convolution at the bottom of the u-net (it is already part of the encoder)
+            if n == 0:
+                continue
+            
+            skip_modules = list()
+            samp_modules = list()
+            pool_modules = list()
+            conv_modules = list()
+
+            # Skippers
+            skip_dilation = 4  # According to Fig. 2 in https://arxiv.org/pdf/2205.10972.pdf
+            conv_config = DictConfig(dict(
+                _target_='torch.nn.Conv2d',
+                in_channels=curr_channel,
+                out_channels=curr_channel,
+                kernel_size=self.kernel_size,
+                dilation=skip_dilation,
+                padding=0
+            ))
+            skip_modules.append(CubeSpherePadding(((kernel_size - 1) // 2)*skip_dilation))
+            skip_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
+                                                flip_north_pole=self.flip_north_pole))
+            if self.activation is not None:
+                skip_modules.append(instantiate(self.activation))
+
+            # Upsamplers
+            for ch_below_idx, channels_below in enumerate(input_channels[:n]):
+                samp_modules.append(UpSampler(
+                    input_channels=channels_below,
+                    output_channels=curr_channel,
+                    upsampling_type=upsampling_type,
+                    upsampling=upsampling*pow2[-n:][ch_below_idx],
+                    kernel_size=kernel_size,
+                    dilation=dilations[n],
+                    activation=activation,
+                    add_polar_layer=add_polar_layer,
+                    flip_north_pole=flip_north_pole
+                    ))
+
+            # Downpoolers
+            for ch_above_idx, channels_above in enumerate(input_channels[::-1][:len(input_channels)-1-n]):
+                pool_modules.append(DownPooler(
+                    pooling_type=pooling_type,
+                    pooling=pooling*pow2[n+1:][ch_above_idx]
+                    ))
+
+            # Convolvers
+            convolution_steps = convolutions_per_depth // 2 if n == 0 else convolutions_per_depth
+            # Regular convolutions. The last convolution depth is dealt with in the next segment, because we either
+            # add another conv + interpolation or a transpose conv.
+            for m in range(convolution_steps - 1):
+                if n == 0 and m == 0:
+                    in_ch = input_channels[n]
+                elif m == 0 and n > 0:
+                    in_ch = curr_channel
+                    # Add channels for upsamplings coming from below and downpoolings coming from above
+                    for channels_below in input_channels[:n]:
+                        in_ch += curr_channel  # Upsamplers convolve to curr_channel
+                    for channels_above in input_channels[::-1][:len(input_channels)-1-n]:
+                        in_ch += channels_above  # Downpoolers keep originial number of channels
+                else:
+                    in_ch = curr_channel
+                conv_config = DictConfig(dict(
+                    _target_='torch.nn.Conv2d',
+                    in_channels=in_ch,
+                    out_channels=curr_channel,
+                    kernel_size=self.kernel_size,
+                    dilation=dilations[n],
+                    padding=0
+                ))
+                conv_modules.append(CubeSpherePadding(((kernel_size - 1) // 2)*dilations[n]))
+                conv_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
+                                               flip_north_pole=self.flip_north_pole))
+                if self.activation is not None:
+                    conv_modules.append(instantiate(self.activation))
+
+            self.decoder.append(torch.nn.ModuleDict(
+                {"skips": torch.nn.Sequential(*skip_modules),
+                 "samps": torch.nn.ModuleList(samp_modules),
+                 "pools": torch.nn.ModuleList(pool_modules),
+                 "convs": torch.nn.Sequential(*conv_modules)}
+                ))
+
+        self.decoder = torch.nn.ModuleList(self.decoder)
+
+        # Linear Output layer
+        conv_modules = list()
+        conv_config = DictConfig(dict(
+            _target_='torch.nn.Conv2d',
+            in_channels=curr_channel*2,  # Residual connection
+            out_channels=output_channels,
+            kernel_size=3,
+            padding=0
+        ))
+        conv_modules.append(CubeSpherePadding((kernel_size - 1) // 2))
+        conv_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
+                                            flip_north_pole=self.flip_north_pole))
+        self.output_layer = torch.nn.Sequential(*conv_modules)
+
+    def forward(self, inputs: Sequence) -> torch.Tensor:
+        outputs = [inputs[-1]]
+        for n, layer in enumerate(self.decoder):
+            # Skips
+            skip = layer["skips"](inputs[-2 - n])
+
+            # Upsamplings
+            ups = list()
+            for u_idx, upsampler in enumerate(layer["samps"]):
+                ups.append(upsampler(outputs[u_idx]))
+            ups = torch.cat(ups, dim=1)
+
+            # Downpoolings
+            if len(layer["pools"]) > 0:
+                downs = list()
+                for d_idx, downpooler in enumerate(layer["pools"]):
+                    downs.append(downpooler(inputs[d_idx]))
+                downs = torch.cat(downs, dim=1)
+                
+                # Stick upsamplings, (downpoolings), and skip together
+                x = torch.cat([ups, downs, skip], dim=1)
+            else:
+                x = torch.cat([ups, skip], dim=1)
+
+            # Convolutions
+            x = layer["convs"](x)
+            outputs.append(x)
+
+        # Linear output residual skip connection
+        x = self.output_layer(torch.cat([x, inputs[0]], dim=1))
+
+        return x
+
+
+class UpSampler(torch.nn.Module):
+    def __init__(
+            self,
+            input_channels: int = 3,
+            output_channels: int = 1,
+            upsampling_type: str = 'interpolate',
+            upsampling: int = 2,
+            kernel_size: int = 3,
+            dilation: int = 1,
+            activation: Optional[DictConfig] = None,
+            add_polar_layer: bool = True,
+            flip_north_pole: bool = True
+    ):
+        super().__init__()
+        upsampler = []
+        if upsampling_type == 'interpolate':
+            # Regular conv + interpolation
+            conv_config = DictConfig(dict(
+                _target_='torch.nn.Conv2d',
+                in_channels=input_channels,
+                out_channels=output_channels,
+                kernel_size=kernel_size,
+                dilation=dilation,
+                padding=0
+            ))
+            upsampler.append(CubeSpherePadding(((kernel_size - 1) // 2)*dilation))
+            upsampler.append(CubeSphereLayer(conv_config, add_polar_layer=add_polar_layer,
+                                             flip_north_pole=flip_north_pole))
+            if activation is not None:
+                upsampler.append(instantiate(activation))
+            upsample_config = DictConfig(dict(
+                _target_='dlwp.model.layers.utils.Interpolate',
+                scale_factor=upsampling,
+                mode='nearest'
+            ))
+            upsampler.append(CubeSphereLayer(upsample_config, add_polar_layer=False, flip_north_pole=False))
+        else:
+            # Upsample transpose conv
+            upsample_config = DictConfig(dict(
+                _target_='torch.nn.ConvTranspose2d',
+                in_channels=input_channels,
+                out_channels=output_channels,
+                kernel_size=upsampling,
+                stride=upsampling,
+                padding=0
+            ))
+            upsampler.append(CubeSphereLayer(upsample_config, add_polar_layer=add_polar_layer,
+                                             flip_north_pole=flip_north_pole))
+            if activation is not None:
+                upsampler.append(instantiate(activation))
+        self.upsampler = torch.nn.Sequential(*upsampler)
+
+    def forward(self, x):
+        return self.upsampler(x)
+
+
+class DownPooler(torch.nn.Module):
+    def __init__(
+            self,
+            pooling_type: str = 'torch.nn.MaxPool2d',
+            pooling: int = 2,
+    ):
+        super().__init__()
+        pool_config = DictConfig(dict(
+            _target_=pooling_type,
+            kernel_size=pooling
+        ))
+        self.downpooler = CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False)
+
+    def forward(self, x):
+        return self.downpooler(x)
+
+
+if __name__ == "__main__":
+    # For debugging purpuses
+    
+    # Build encoder and decoder
+    channels = [4, 8, 16, 32, 64]
+    encoder = UnetEncoder(n_channels=channels, dilations=[1, 2, 4, 8, 16])
+    decoder = Unet3plusDecoder(
+        input_channels=channels,
+        n_channels=channels[::-1],
+        dilations=[1, 2, 4, 8, 16]
+        )
+    
+    # Forward data through encoder and decoder
+    x = torch.randn(4, 3, 6, 256, 256)
+    encodings = encoder(x)
+    for encoding in encodings:
+        print(encoding.shape)
+    #encodings = [torch.randn(4, 4, 6, 256, 256),
+    #             torch.randn(4, 8, 6, 128, 128),
+    #             torch.randn(4, 16, 6, 64, 64),
+    #             torch.randn(4, 32, 6, 32, 32),
+    #             torch.randn(4, 64, 6, 16, 16)]
+    y_hat = decoder(encodings)
+    print(y_hat.shape)
+    print("Done.")
