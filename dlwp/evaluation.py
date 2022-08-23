@@ -73,7 +73,8 @@ def rmse_ll(evaluation_directory, forecasts, plot_file):
             
             f = ForecastEval(forecast_file=forecast['file'],
                              eval_variable=variable['varlev'],
-                             cs_config=forecast['cs_config'])
+                             cs_config=forecast['cs_config'],
+                             unit_conversion=variable['unit_conversion'] if 'unit_conversion' in variable.keys() else None)
             print('generating verif...')
             getattr(f,variable['verification_generator'])(**variable['verification_params'])
             print('done!')
@@ -122,7 +123,7 @@ class ForecastEval(object):
     painless comparison of forecasts and evaluation of ensembles. 
     """
     
-    def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None):
+    def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None, unit_conversion=None):
         
         """
         Initialize ForecastEval object. 
@@ -136,7 +137,8 @@ class ForecastEval(object):
               variable used to calculate evaluation metrics      
         :param cs_config: dict:
                a dictionary that configures the remap of the forecast and verification
-               from the CubeSphere 
+               from the CubeSphere
+        :param unit_converstion: float: factor to convert units in forecast file 
         """
 
         # check inputs
@@ -165,6 +167,7 @@ class ForecastEval(object):
         self.num_forecast_steps = None
         self.forecast_dt = None
         self.verification_range = None
+        self.unit_conversion=unit_conversion
        
         # initialize configuration of CubeSphereRemap
         if cs_config is None:
@@ -182,7 +185,11 @@ class ForecastEval(object):
                 if self.verbose:
                     print('Initialized ForecastEval around file %s for %s' % (self.forecast_file,
                                                                               self.eval_var))
-                self.forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
+                if self.unit_conversion is None:
+                    self.forecast_da = xr.open_dataset(forecast_file)[self.eval_var]
+                else: 
+                    print('converting values in forecast with by factor %s' % str(self.unit_conversion))
+                    self.forecast_da = xr.open_dataset(forecast_file)[self.eval_var]*self.unit_conversion
                 if self.verbose:
                     print('Mapping forecast to a Lat-Lon mesh for evaluation')
                 # map to lat lon mesh and add proper coordinates
@@ -234,7 +241,7 @@ class ForecastEval(object):
                                                 self.eval_var).assign_coords({'time':verif.time,
                                                                               'step':verif.step})
 
-    def generate_verification_from_era5(self, era5_file=None, variable_name=None, level=None, conversion=None,
+    def generate_verification_from_era5(self, era5_file=None, variable_name=None, level=None,
                                         interpolation_method='linears'):
         """
         use raw EA5 data to create a verification field
@@ -245,8 +252,6 @@ class ForecastEval(object):
             name of evaluation variable within ERA5 dataset  above
         :param: float: level:
             level of evaluation variable
-        :param: float: conversion:
-            unit conversion factor
         :param: string: interpolation method:
             method used to interpolate era5 data to same mesh as forecast
         """
@@ -278,10 +283,6 @@ class ForecastEval(object):
             verif[i] = tmp.values.squeeze()
 #            verif[i] = tmp.interp(latitude=self.forecast_da_LL.lat, longitude=self.forecast_da_LL,
 #                                  method=interpolation_method).values.squeeze()
-
-        if conversion is not None:
-            print('converting verification array using %s factor' % str(conversion))
-            verif = verif*conversion
 
         self.verification_da_LL = verif
 
