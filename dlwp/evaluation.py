@@ -56,6 +56,40 @@ def convert_to_ll(da, path_to_remapper, map_files, var_name):
 
     return ll_da
 
+def rmse_cs(evaluation_directory, forecasts, plot_file):
+
+    """
+    
+    """
+
+    # initialize empty dicitonary to hold RMSE. Keys will be var, values will
+    # be lists with associated RMSE for each forecast
+    rmse = {} 
+    
+    # iterate through forecasts and verify as specified in config  
+    for forecast in forecasts: 
+    
+        print('getting RMSE for configuration:')   
+        print(forecast)
+        
+        for variable in forecast['variables']:
+            
+            f = ForecastEval(forecast_file=forecast['file'],
+                             eval_variable=variable['varlev'],
+                             cs_config=forecast['cs_config'],
+                             unit_conversion=variable['unit_conversion'] if 'unit_conversion' in variable.keys() else None,
+                             remap=False)
+            print('generating verif...')
+            f.generate_verification_from_predictor(**variable['verification_params'])
+            print('done!')
+            if variable['varlev'] not in rmse.keys(): 
+                rmse[variable['varlev']]=[]
+            rmse[variable['varlev']].append({'f_hours': f.get_f_hour(),
+                                             'rmse':f.get_rmse_cs(),
+                                             'plotting':forecast['plotting']})
+
+    rmse_ll_plot(evaluation_directory, rmse, plot_file)
+
 def rmse_ll(evaluation_directory, forecasts, plot_file):
 
     """
@@ -109,7 +143,7 @@ def rmse_ll_plot(evaluation_directory, rmse, plot_file):
 
         axs[i].grid()
     
-    axs[-1].legend(fontsize=15)
+    axs[0].legend(fontsize=15)
     plt.tight_layout()
  
     plot_path = os.path.join(evaluation_directory,plot_file) 
@@ -126,7 +160,7 @@ class ForecastEval(object):
     painless comparison of forecasts and evaluation of ensembles. 
     """
     
-    def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None, unit_conversion=None):
+    def __init__(self, forecast_file=None, eval_variable=None, verbose=True, cs_config=None, unit_conversion=None, remap=True):
         
         """
         Initialize ForecastEval object. 
@@ -142,6 +176,7 @@ class ForecastEval(object):
                a dictionary that configures the remap of the forecast and verification
                from the CubeSphere
         :param unit_converstion: float: factor to convert units in forecast file 
+        :param remap: bool: instructions whether to map CS forecast and predictor to LL
         """
 
         # check inputs
@@ -163,6 +198,7 @@ class ForecastEval(object):
 
         # initialize forecast attributes and configuration variables
         self.forecast_file = forecast_file
+        self.remap = remap
         self.forecast_da = None
         self.forecast_da_LL = None
         self.init_times = None
@@ -193,14 +229,17 @@ class ForecastEval(object):
                 else: 
                     print('converting values in forecast with by factor %s' % str(self.unit_conversion))
                     self.forecast_da = xr.open_dataset(forecast_file)[self.eval_var]*self.unit_conversion
-                if self.verbose:
-                    print('Mapping forecast to a Lat-Lon mesh for evaluation')
-                # map to lat lon mesh and add proper coordinates
-                self.forecast_da_LL = convert_to_ll(self.forecast_da,
-                                                    self.cs_config['path_to_remapper'],
-                                                    self.cs_config['map_files'],
-                                                    self.eval_var).assign_coords(time=self.forecast_da.time,
-                                                                                 step=self.forecast_da.step)
+                if self.remap is True:
+                    if self.verbose:
+                        print('Mapping forecast to a Lat-Lon mesh for evaluation')
+                    # map to lat lon mesh and add proper coordinates
+                    self.forecast_da_LL = convert_to_ll(self.forecast_da,
+                                                        self.cs_config['path_to_remapper'],
+                                                        self.cs_config['map_files'],
+                                                        self.eval_var).assign_coords(time=self.forecast_da.time,
+                                                                                     step=self.forecast_da.step)
+                else: 
+                    print("Intructed to not remap forecast into lat-lon mesh. Keeping forecast its CS format.")
             else: 
                 print('%s was not found, ForecastEval was not able to initialize\
                        around a forecast.' % forecast_file)
@@ -236,13 +275,14 @@ class ForecastEval(object):
             # populate verif array with samples from date array above
             verif[i] = xr.open_dataset(predictor_file).predictors.sel(sample=samples).values.squeeze()
         self.verification_da = verif
-        if self.verbose:
-            print('remapping verification DataArray from the CS using config: %s' % str(self.cs_config))
-        self.verification_da_LL = convert_to_ll(self.verification_da,
-                                                self.cs_config['path_to_remapper'],
-                                                self.cs_config['map_files'],
-                                                self.eval_var).assign_coords({'time':verif.time,
-                                                                              'step':verif.step})
+        if self.remap:
+            if self.verbose:
+                print('remapping verification DataArray from the CS using config: %s' % str(self.cs_config))
+            self.verification_da_LL = convert_to_ll(self.verification_da,
+                                                    self.cs_config['path_to_remapper'],
+                                                    self.cs_config['map_files'],
+                                                    self.eval_var).assign_coords({'time':verif.time,
+                                                                                  'step':verif.step})
 
     def generate_verification_from_era5(self, era5_file=None, variable_name=None, level=None,
                                         interpolation_method='linears'):
@@ -333,6 +373,29 @@ class ForecastEval(object):
                 self.verification_da_LL = (self.verification_da_LL*std)+mean
             self._scaled = True
 
+    def get_mse_cs(self, mean=True):
+        """
+        return the MSE of the forecast against the verification on the Cuber sphere
+        """
+        # enforce proper order of dimensions in data arrays to avoid incorrect calculation
+        f = self.forecast_da.transpose('step', 'time', 'face', 'height', 'width')
+        verif = self.verification_da.transpose('step', 'time', 'face', 'height', 'width')
+        # only calculate error over time available in verification
+        valid_inits = self.verification_da.time
+        # calculate mse
+        if mean:
+            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                              ** 2., axis=(1, 2, 3, 4))
+        else:
+            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                              ** 2., axis=(2, 3, 4))
+
+    def get_rmse_cs(self, mean=True):
+        """
+        return the RMSE of forecast against verification
+        """
+        return np.sqrt(self.get_mse_cs(mean=mean))
+
     def get_mse(self, mean=True):
         """
         return the MSE of the forecast against the verification
@@ -365,7 +428,7 @@ class ForecastEval(object):
         """
         return an array with the leadtime of the forecast in hours 
         """
-        f_hour = self.forecast_da_LL.step/(3600*1e9)  # convert from nanoseconds to hours
+        f_hour = self.forecast_da.step/(3600*1e9)  # convert from nanoseconds to hours
         f_hour = np.array(f_hour, dtype=float)
         return f_hour
 
