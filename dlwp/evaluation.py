@@ -16,6 +16,9 @@ varlev_units = {
     't2m0':'K',
     'tau300-700':'m$^2$ s$^{-2}$',
     'tcwv0':'kg m$^{-2}$',
+    'q850':'kg kg$^{-1}$',
+    'u10m':'m s$^{-1}$',
+    'v10m':'m s$^{-1}$',
 }
 
 def convert_to_ll(da, path_to_remapper, map_files, var_name):
