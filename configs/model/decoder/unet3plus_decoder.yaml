@@ -13,6 +13,7 @@ dilations:
 upsampling_type: interpolate
 upsampling: 2
 activation:
-  _target_: torch.nn.LeakyReLU
+  _target_: dlwp.model.layers.activations.CappedLeakyGELU
+  cap_value: 10.
 add_polar_layer: true
 flip_north_pole: true

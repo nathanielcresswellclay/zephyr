@@ -90,6 +90,9 @@ class CubeSphereUnet(BaseModel, ABC):
             output_time_dim=self.output_time_dim,
         )
 
+        #print(self.generator)
+        #exit()
+
         self.save_hyperparameters()
         self.configure_metrics()
 
@@ -401,6 +404,78 @@ class UnetDecoder(torch.nn.Module):
         return x
 
 
+class Unet3PlusEncoder(torch.nn.Module):
+    def __init__(
+            self,
+            input_channels: int = 3,
+            n_channels: Sequence = (16, 32, 64),
+            convolutions_per_depth: int = 2,
+            kernel_size: int = 3,
+            dilations: list = None,
+            pooling_type: str = 'torch.nn.MaxPool2d',
+            pooling: int = 2,
+            activation: Optional[DictConfig] = None,
+            add_polar_layer: bool = True,
+            flip_north_pole: bool = True
+    ):
+        super().__init__()
+        self.n_channels = n_channels
+        self.kernel_size = kernel_size
+        self.pooling_type =pooling_type
+        self.pooling = pooling
+        self.activation = activation
+        self.add_polar_layer = add_polar_layer
+        self.flip_north_pole = flip_north_pole
+
+        if dilations is None:
+            # Defaults to [1, 1, 1...] in accordance with the number of unet levels
+            dilations = [1 for _ in range(len(n_channels))]
+
+        assert input_channels >= 1
+        assert convolutions_per_depth >= 1
+        assert kernel_size >= 1 and kernel_size % 2 == 1
+        assert pooling >= 1
+
+        old_channels = input_channels
+        self.encoder = []
+        for n, curr_channel in enumerate(self.n_channels):
+            modules = list()
+            if n > 0 and self.pooling is not None:
+                pool_config = DictConfig(dict(
+                    _target_=self.pooling_type,
+                    kernel_size=self.pooling
+                ))
+                modules.append(CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False))
+            #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth//2  # <-- original (one conv)
+            convolution_steps = convolutions_per_depth  # <-- two convs
+            #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth*2  # <-- four convs (https://arxiv.org/pdf/2205.10972.pdf)
+            for _ in range(convolution_steps):
+                conv_config = DictConfig(dict(
+                    _target_='torch.nn.Conv2d',
+                    in_channels=old_channels,
+                    out_channels=curr_channel,
+                    kernel_size=self.kernel_size,
+                    dilation=dilations[n],
+                    padding=0
+                ))
+                modules.append(CubeSpherePadding(((self.kernel_size - 1) // 2)*dilations[n]))
+                modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
+                                               flip_north_pole=self.flip_north_pole))
+                if self.activation is not None:
+                    modules.append(instantiate(self.activation))
+                old_channels = curr_channel
+            self.encoder.append(torch.nn.Sequential(*modules))
+
+        self.encoder = torch.nn.ModuleList(self.encoder)
+
+    def forward(self, inputs: Sequence) -> Sequence:
+        outputs = []
+        for layer in self.encoder:
+            outputs.append(layer(inputs))
+            inputs = outputs[-1]
+        return outputs
+
+
 class Unet3plusDecoder(torch.nn.Module):
     def __init__(
             self,
@@ -443,14 +518,15 @@ class Unet3plusDecoder(torch.nn.Module):
         input_channels = list(input_channels[::-1])
         self.decoder = []
         for n, curr_channel in enumerate(n_channels):
-            # Only do one convolution at the bottom of the u-net (it is already part of the encoder)
+
+            # No additional convolutions at the bottom of the u-net decoder (they are already part of the encoder)
             if n == 0:
                 continue
             
             skip_modules = list()
             samp_modules = list()
             pool_modules = list()
-            conv_modules = list()
+            conv_modules = list()            
 
             # Skippers
             skip_dilation = 4  # According to Fig. 2 in https://arxiv.org/pdf/2205.10972.pdf
@@ -493,7 +569,7 @@ class Unet3plusDecoder(torch.nn.Module):
             convolution_steps = convolutions_per_depth // 2 if n == 0 else convolutions_per_depth
             # Regular convolutions. The last convolution depth is dealt with in the next segment, because we either
             # add another conv + interpolation or a transpose conv.
-            for m in range(convolution_steps - 1):
+            for m in range(convolution_steps):
                 if n == 0 and m == 0:
                     in_ch = input_channels[n]
                 elif m == 0 and n > 0:
@@ -650,7 +726,7 @@ class DownPooler(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    # For debugging purpuses
+    # For debugging purposes
     
     # Build encoder and decoder
     channels = [4, 8, 16, 32, 64]
