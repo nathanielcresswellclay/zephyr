@@ -189,6 +189,7 @@ class ForecastEval(object):
  
         # initialize verification attributes 
         self.verification_file = None
+        self.verification_file_LL = None
         self.verification_da = None
         self.verification_da_LL = None
         self.eval_var = eval_variable
@@ -303,9 +304,9 @@ class ForecastEval(object):
             print('Please indicate an ERA5 file')
             return
         # Assign file used in verification
-        if self.verification_file is not None:
-            print('Replacing OLD verification dataset: %s' % self.verification_file)
-        self.verification_file = era5_file
+        if self.verification_file_LL is not None:
+            print('Replacing OLD verification dataset: %s' % self.verification_file_LL)
+        self.verification_file_LL = era5_file
         # Find init dates that correspond to forecasted times sampled in the given predictor file
         valid_inits = self._find_valid_inits(xr.open_dataset(era5_file).time.values)
         # Initialize array to hold verification data in forecast format
@@ -372,7 +373,7 @@ class ForecastEval(object):
                     print('Scaling verification_da_LL by mean: %s and std: %s' % (str(mean),str(std)))           
                 self.verification_da_LL = (self.verification_da_LL*std)+mean
             self._scaled = True
-
+    
     def get_mse_cs(self, mean=True):
         """
         return the MSE of the forecast against the verification on the Cuber sphere
@@ -424,6 +425,77 @@ class ForecastEval(object):
         """
         return np.sqrt(self.get_mse(mean=mean))
     
+    def _daily_climo_time_series(self, climatology, times, step=None):
+        """
+        Generate a time series of daily climatology values from a climatology Dataset or DataArray and the specific
+        desired times.
+
+        :param climatology: xarray.Dataset or xarray.DataArray with a 'dayofyear' dimension
+        :param times: iter: Timestamps
+        :param step: iter: timedelta64[ns] or int
+        :return: xarray.Dataset or xarray.DataArray with a 'time' dimension corresponding to daily climatologies for those
+            times
+        """
+        if step is not None:
+            result = []
+            for s in step:
+                doy = [pd.Timestamp(t + np.array(s).astype('timedelta64[ns]')).dayofyear for t in times]
+                result.append(climatology.sel(dayofyear=doy).rename({'dayofyear': 'time'}).assign_coords(time=times))
+            result = xr.concat(result, dim='step').assign_coords(step=step)
+        else:
+            doy = [t.dayofyear for t in times]
+            result = climatology.sel(dayofyear=doy).rename({'dayofyear': 'time'}).assign_coords(time=times)
+        return result
+
+    def get_acc(self, climatology_file=None, mean=True, variable_name=None, level=None):
+        
+        if self.remap: 
+            if climatology_file is None: 
+                print('No provided climatology file, calculating from {}'.format(self.verification_file_LL))
+                if variable_name is None or level is None:
+                    print('Please provide variable name and level for indexing of {}'.format(self.verification_file_LL))
+                    return 
+                climatology = self._daily_climo_time_series(climatology = xr.open_dataset(self.verification_file_LL)[variable_name].sel(level=level).groupby('time.dayofyear').mean(),
+                                                            times = self.verification_da_LL.time.values,
+                                                            step=self.verification_da_LL.step.values)
+                # transpose coordinates to match forecast and verification da 
+                climatology = climatology.transpose('time','step','latitude','longitude')
+                climatology.rename({'latitude':'lat','longitude':'lon'})
+                climatology.assign_coords(self.verification_da_LL.coords) 
+            else: 
+                climatology = xr.open_dataset(climotology_file)[variable_name].sel(level=level)
+            if mean:
+                mean_over = (0,2,3)
+                print('self.verification_da_LL: '+str(self.verification_da_LL))
+                print('climatology: '+str(climatology))
+                print('self.forecast_da_LL: '+str(self.forecast_da_LL))
+                return (np.nanmean((self.verification_da_LL - climatology) * (self.forecast_da_LL - climatology), axis=mean_over)
+                        / np.sqrt(np.nanmean((self.verification_da_LL- climatology) ** 2., axis=mean_over) *
+                                  np.nanmean((self.forecast_da_LL - climatology) ** 2., axis=mean_over)))
+            else:
+                mean_over = (2,3)
+                return (np.nanmean((self.verification_da_LL - climatology) * (self.forecast_da_LL - climatology), axis=mean_over)
+                        / np.sqrt(np.nanmean((self.verification_da_LL - climatology) ** 2., axis=mean_over) *
+                                  np.nanmean((self.forecast_da_LL - climatology) ** 2., axis=mean_over)))
+        else:
+            if climatology_file is None: 
+                print('No provided climatology file, calculating from {}'.format(self.verification_file))
+                climatology = self._daily_climo_time_series(climatology = xr.open_dataset(self.verification_file)['predictors'].groupby('sample.dayofyear').mean(),
+                                                            times = self.verification_da.time.values,
+                                                            step=self.verification_da.step.values)
+            else: 
+                climatology = xr.open_dataset(climotology_file)['predictors'].sel(varlev=self.eval_variable)
+            if mean:
+                mean_over = (0,2,3,4)
+                return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
+                        / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
+                                  np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
+            else:
+                mean_over = (2,3,4)
+                return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
+                        / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
+                                  np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
+
     def get_f_hour(self):
         """
         return an array with the leadtime of the forecast in hours 
