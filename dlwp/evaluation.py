@@ -56,6 +56,102 @@ def convert_to_ll(da, path_to_remapper, map_files, var_name):
 
     return ll_da
 
+def acc_cs(evaluation_directory, forecasts, plot_file):
+
+    """
+    
+    """
+
+    # initialize empty dicitonary to hold ACC. Keys will be var, values will
+    # be lists with associated ACC for each forecast
+    acc = {} 
+    
+    # iterate through forecasts and verify as specified in config  
+    for forecast in forecasts: 
+    
+        print('getting ACC for configuration:')   
+        print(forecast)
+        
+        for variable in forecast['variables']:
+            
+            f = ForecastEval(forecast_file=forecast['file'],
+                             eval_variable=variable['varlev'],
+                             cs_config=forecast['cs_config'],
+                             unit_conversion=variable['unit_conversion'] if 'unit_conversion' in variable.keys() else None,
+                             remap=False)
+            print('generating verif...')
+            f.generate_verification_from_predictor(**variable['verification_params'])
+            print('done!')
+            if variable['varlev'] not in acc.keys(): 
+                acc[variable['varlev']]=[]
+            acc[variable['varlev']].append({'f_hours': f.get_f_hour(),
+                                            'acc':f.get_acc(),
+                                            'plotting':forecast['plotting']})
+
+    acc_plot(evaluation_directory, acc, plot_file)
+
+def acc_ll(evaluation_directory, forecasts, plot_file):
+
+    """
+    
+    """
+
+    # initialize empty dicitonary to hold ACC. Keys will be var, values will
+    # be lists with associated ACC for each forecast
+    acc = {} 
+    
+    # iterate through forecasts and verify as specified in config  
+    for forecast in forecasts: 
+    
+        print('getting ACC for configuration:')   
+        print(forecast)
+        
+        for variable in forecast['variables']:
+            
+            f = ForecastEval(forecast_file=forecast['file'],
+                             eval_variable=variable['varlev'],
+                             cs_config=forecast['cs_config'],
+                             unit_conversion=variable['unit_conversion'] if 'unit_conversion' in variable.keys() else None,
+                             remap=True)
+            print('generating verif...')
+            f.generate_verification_from_era5(**variable['verification_params'])
+            print('done!')
+            if variable['varlev'] not in acc.keys(): 
+                acc[variable['varlev']]=[]
+            acc[variable['varlev']].append({'f_hours': f.get_f_hour(),
+                                            'acc':f.get_acc(variable_name=variable['verification_params']['variable_name'],
+                                                            level=variable['verification_params']['level'] if 'level' in variable['verification_params'].keys() else None),
+                                            'plotting':forecast['plotting']})
+
+    acc_plot(evaluation_directory, acc, plot_file)
+
+def acc_plot(evaluation_directory, acc, plot_file):
+            
+    # create RMSE figure 
+    ncols = int(np.ceil(len(acc.keys())/3))
+    nrows = int(np.ceil(len(acc.keys())/ncols))         
+    fig = plt.figure(figsize=(10*ncols,5*nrows))
+    axs = []
+
+    for i, variable in enumerate(acc.keys()):
+         
+        axs.append(fig.add_subplot(nrows,ncols,i+1)) # matplotlib uses 1-indexing
+        axs[i].set_title(variable,fontsize=15) 
+        axs[i].set_xlabel('Forecast Day',fontsize=15)
+        axs[i].set_ylabel('ACC',fontsize=15)
+
+        for var_acc in acc[variable]:
+            axs[i].plot(var_acc['f_hours']/24,var_acc['acc'],**var_acc['plotting'])   
+
+        axs[i].grid()
+    
+    axs[0].legend(fontsize=15)
+    plt.tight_layout()
+ 
+    plot_path = os.path.join(evaluation_directory,plot_file) 
+    print('Saving plot to {}'.format(plot_path))
+    fig.savefig(plot_path,dpi=300) 
+
 def rmse_cs(evaluation_directory, forecasts, plot_file):
 
     """
@@ -85,7 +181,7 @@ def rmse_cs(evaluation_directory, forecasts, plot_file):
             if variable['varlev'] not in rmse.keys(): 
                 rmse[variable['varlev']]=[]
             rmse[variable['varlev']].append({'f_hours': f.get_f_hour(),
-                                             'rmse':f.get_rmse_cs(),
+                                             'rmse':f.get_rmse(),
                                              'plotting':forecast['plotting']})
 
     rmse_ll_plot(evaluation_directory, rmse, plot_file)
@@ -401,24 +497,38 @@ class ForecastEval(object):
         """
         return the MSE of the forecast against the verification
         """
-        # calculate the weights to apply to the MSE
-        weights = np.cos(np.deg2rad(self.verification_da_LL.lat.values))
-        weights /= weights.mean()        
-        # enforce proper order of dimensions in data arrays to avoid incorrect calculation
-        f = self.forecast_da_LL.transpose('step', 'time', 'lon', 'lat')
-        verif = self.verification_da_LL.transpose('step', 'time', 'lon', 'lat')
-        # reshape weights to be compatible with verif array
-        weights = np.expand_dims(np.expand_dims(np.expand_dims(weights, axis=0), axis=0), axis=0)
-        # only calculate error over time available in verification
-        valid_inits = self.verification_da_LL.time
-        # calculate mse
-        if mean:
-            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
-                              ** 2. * weights, axis=(1, 2, 3))
+        if self.remap: 
+            # calculate the weights to apply to the MSE
+            weights = np.cos(np.deg2rad(self.verification_da_LL.lat.values))
+            weights /= weights.mean()        
+            # enforce proper order of dimensions in data arrays to avoid incorrect calculation
+            f = self.forecast_da_LL.transpose('step', 'time', 'lon', 'lat')
+            verif = self.verification_da_LL.transpose('step', 'time', 'lon', 'lat')
+            # reshape weights to be compatible with verif array
+            weights = np.expand_dims(np.expand_dims(np.expand_dims(weights, axis=0), axis=0), axis=0)
+            # only calculate error over time available in verification
+            valid_inits = self.verification_da_LL.time
+            # calculate mse
+            if mean:
+                return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                                  ** 2. * weights, axis=(1, 2, 3))
+            else:
+                return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                                  ** 2. * weights, axis=(2, 3))
         else:
-            return np.nanmean((verif.values-f.sel(time=valid_inits).values)
-                              ** 2. * weights, axis=(2, 3))
-
+            # enforce proper order of dimensions in data arrays to avoid incorrect calculation
+            f = self.forecast_da.transpose('step', 'time', 'face', 'height', 'width')
+            verif = self.verification_da.transpose('step', 'time', 'face', 'height', 'width')
+            # only calculate error over time available in verification
+            valid_inits = self.verification_da.time
+            # calculate mse
+            if mean:
+                return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                                  ** 2., axis=(1, 2, 3, 4))
+            else:
+                return np.nanmean((verif.values-f.sel(time=valid_inits).values)
+                                  ** 2., axis=(2, 3, 4))
+    
     def get_rmse(self, mean=True):
         """
         return the RMSE of forecast against verification
@@ -452,18 +562,26 @@ class ForecastEval(object):
         if self.remap: 
             if climatology_file is None: 
                 print('No provided climatology file, calculating from {}'.format(self.verification_file_LL))
-                if variable_name is None or level is None:
-                    print('Please provide variable name and level for indexing of {}'.format(self.verification_file_LL))
+                if variable_name is None:
+                    print('Please provide variable name and level (if appropriate) for indexing of {}'.format(self.verification_file_LL))
                     return 
-                climatology = self._daily_climo_time_series(climatology = xr.open_dataset(self.verification_file_LL)[variable_name].sel(level=level).groupby('time.dayofyear').mean(),
-                                                            times = self.verification_da_LL.time.values,
-                                                            step=self.verification_da_LL.step.values)
+                if level is not None:
+                    climatology = self._daily_climo_time_series(climatology = xr.open_dataset(self.verification_file_LL)[variable_name].sel(level=level).groupby('time.dayofyear').mean(),
+                                                                times = self.verification_da_LL.time.values,
+                                                                step=self.verification_da_LL.step.values)
+                else:
+                    climatology = self._daily_climo_time_series(climatology = xr.open_dataset(self.verification_file_LL)[variable_name].groupby('time.dayofyear').mean(),
+                                                                times = self.verification_da_LL.time.values,
+                                                                step=self.verification_da_LL.step.values)
                 # transpose coordinates to match forecast and verification da 
                 climatology = climatology.transpose('time','step','latitude','longitude')
-                climatology.rename({'latitude':'lat','longitude':'lon'})
-                climatology.assign_coords(self.verification_da_LL.coords) 
+                climatology = climatology.rename({'latitude':'lat','longitude':'lon'})
+                climatology = climatology.assign_coords(self.verification_da_LL.coords) 
             else: 
-                climatology = xr.open_dataset(climotology_file)[variable_name].sel(level=level)
+                if level is None: 
+                    climatology = xr.open_dataset(climotology_file)[variable_name]
+                else: 
+                    climatology = xr.open_dataset(climotology_file)[variable_name].sel(level=level)
             if mean:
                 mean_over = (0,2,3)
                 print('self.verification_da_LL: '+str(self.verification_da_LL))
