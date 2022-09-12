@@ -557,6 +557,7 @@ class ForecastEval(object):
             result = climatology.sel(dayofyear=doy).rename({'dayofyear': 'time'}).assign_coords(time=times)
         return result
 
+
     def get_acc(self, climatology_file=None, mean=True, variable_name=None, level=None):
         
         if self.remap: 
@@ -584,12 +585,21 @@ class ForecastEval(object):
                     climatology = xr.open_dataset(climotology_file)[variable_name].sel(level=level)
             if mean:
                 mean_over = (0,2,3)
-                print('self.verification_da_LL: '+str(self.verification_da_LL))
-                print('climatology: '+str(climatology))
-                print('self.forecast_da_LL: '+str(self.forecast_da_LL))
-                return (np.nanmean((self.verification_da_LL - climatology) * (self.forecast_da_LL - climatology), axis=mean_over)
-                        / np.sqrt(np.nanmean((self.verification_da_LL- climatology) ** 2., axis=mean_over) *
-                                  np.nanmean((self.forecast_da_LL - climatology) ** 2., axis=mean_over)))
+                # if evaluating t2m, daily averages must be calculated
+                if self.eval_var == 't2m0':
+                    self.forecast_da_LL['f_day'] = xr.DataArray(np.floor((self.forecast_da_LL.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    self.verification_da_LL['f_day'] = xr.DataArray(np.floor((self.verification_da_LL.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    climatology['f_day'] = xr.DataArray(np.floor((climatology.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    f_daily_mean = self.forecast_da_LL.groupby('f_day').mean()
+                    v_daily_mean = self.verification_da_LL.groupby('f_day').mean()
+                    c_daily_mean = climatology.groupby('f_day').mean()
+                    return (np.nanmean((v_daily_mean - c_daily_mean) * (f_daily_mean - c_daily_mean), axis=mean_over)
+                            / np.sqrt(np.nanmean((v_daily_mean- c_daily_mean) ** 2., axis=mean_over) *
+                                      np.nanmean((f_daily_mean - c_daily_mean) ** 2., axis=mean_over)))
+                else:
+                    return (np.nanmean((self.verification_da_LL - climatology) * (self.forecast_da_LL - climatology), axis=mean_over)
+                            / np.sqrt(np.nanmean((self.verification_da_LL- climatology) ** 2., axis=mean_over) *
+                                      np.nanmean((self.forecast_da_LL - climatology) ** 2., axis=mean_over)))
             else:
                 mean_over = (2,3)
                 return (np.nanmean((self.verification_da_LL - climatology) * (self.forecast_da_LL - climatology), axis=mean_over)
@@ -602,17 +612,41 @@ class ForecastEval(object):
                                                             times = self.verification_da.time.values,
                                                             step=self.verification_da.step.values)
             else: 
-                climatology = xr.open_dataset(climotology_file)['predictors'].sel(varlev=self.eval_variable)
+                climatology = xr.open_dataset(climotology_file)['predictors'].sel(varlev=self.eval_var)
             if mean:
                 mean_over = (0,2,3,4)
-                return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
-                        / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
-                                  np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
+                # if evaluating t2m, daily averages must be calculated
+                if self.eval_var == 't2m0':
+                    self.forecast_da['f_day'] = xr.DataArray(np.floor((self.forecast_da.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    self.verification_da['f_day'] = xr.DataArray(np.floor((self.verification_da.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    climatology['f_day'] = xr.DataArray(np.floor((climatology.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    f_daily_mean = self.forecast_da.groupby('f_day').mean()
+                    v_daily_mean = self.verification_da.groupby('f_day').mean()
+                    c_daily_mean = climatology.groupby('f_day').mean()
+                    return (np.nanmean((v_daily_mean - c_daily_mean) * (f_daily_mean - c_daily_mean), axis=mean_over)
+                            / np.sqrt(np.nanmean((v_daily_mean- c_daily_mean) ** 2., axis=mean_over) *
+                                      np.nanmean((f_daily_mean - c_daily_mean) ** 2., axis=mean_over)))
+                else:
+                    return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
+                            / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
+                                      np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
             else:
                 mean_over = (2,3,4)
-                return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
-                        / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
-                                  np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
+                # if evaluating t2m, daily averages must be calculated
+                if self.eval_var == 't2m0':
+                    self.forecast_da['f_day'] = xr.DataArray(np.floor((self.forecast_da.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    self.verification_da['f_day'] = xr.DataArray(np.floor((self.verification_da.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    climatology['f_day'] = xr.DataArray(np.floor((climatology.step.values.astype('float') - 1) / 8.64e13 + 1), dims='step')
+                    f_daily_mean = self.forecast_da.groupby('f_day').mean()
+                    v_daily_mean = self.verification_da.groupby('f_day').mean()
+                    c_daily_mean = climatology.groupby('f_day').mean()
+                    return (np.nanmean((v_daily_mean - c_daily_mean) * (f_daily_mean - c_daily_mean), axis=mean_over)
+                            / np.sqrt(np.nanmean((v_daily_mean- c_daily_mean) ** 2., axis=mean_over) *
+                                      np.nanmean((f_daily_mean - c_daily_mean) ** 2., axis=mean_over)))
+                else:
+                    return (np.nanmean((self.verification_da - climatology) * (self.forecast_da - climatology), axis=mean_over)
+                            / np.sqrt(np.nanmean((self.verification_da- climatology) ** 2., axis=mean_over) *
+                                      np.nanmean((self.forecast_da - climatology) ** 2., axis=mean_over)))
 
     def get_f_hour(self):
         """
