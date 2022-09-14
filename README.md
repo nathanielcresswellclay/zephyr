@@ -1,1 +1,1 @@
-# Atmospheric modelling using data-driven methods. Evolved from jweyn/DELUSioN.
+# Atmospheric modeling using data-driven methods. Evolved from jweyn/DELUSioN.
