@@ -159,6 +159,30 @@ def insolation(dates, lat, lon, S=1., daily=False, enforce_2d=False, clip_zero=T
     return sol.astype(np.float32)
 
 
+def get_best_checkpoint_path(path: str) -> str:
+    """
+    Returns the string of the best checkpoint in a given directory.
+
+    :param path: The path to a checkpoints directory
+    :return: The absolute path of the best checkpoint
+    """
+    path = os.path.abspath(path)
+    ckpt_paths = np.array(glob.glob(path + "/epoch*.ckpt"))
+
+    best_path = ""
+    best_error = np.infty
+    for ckpt_path in ckpt_paths:
+        if "NAN" in ckpt_path:
+            continue
+        # Read the scientific number from the checkpoint name and perform update if appropriate
+        curr_error = float(re.findall("-?\d*\.?\d+E[+-]?\d+", os.path.basename(ckpt_path))[0])
+        if curr_error < best_error:
+            best_path = ckpt_path
+            best_error = curr_error
+
+    return best_path
+
+
 class CustomProgressBar(TQDMProgressBar):
     def get_metrics(self, *args, **kwargs):
         # don't show the version number

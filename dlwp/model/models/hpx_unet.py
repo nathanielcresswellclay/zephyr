@@ -91,9 +91,6 @@ class HEALPixUnet(BaseModel, ABC):
             output_time_dim=self.output_time_dim,
         )
 
-        #print(self.generator)
-        #exit()
-
         self.save_hyperparameters()
         self.configure_metrics()
 
@@ -193,7 +190,7 @@ class IterativeUnet(torch.nn.Module):
         if self.decoder_input_channels == 0:
             result = [
                 inputs[0].flatten(start_dim=1, end_dim=2),  # inputs
-                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
+                inputs[1].expand(*tuple([inputs[0].shape[0]] + len(inputs[1].shape) * [-1]))  # constants
             ]
             return torch.cat(result, dim=1)
         result = [

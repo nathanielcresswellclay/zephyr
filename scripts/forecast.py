@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm
 import xarray as xr
 
-from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging
+from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
 
 logger = logging.getLogger(__name__)
 logging.getLogger('cfgrib').setLevel(logging.ERROR)
@@ -81,9 +81,13 @@ def inference(args: argparse.Namespace):
         model_version = get_latest_version(version_directory)
     else:
         model_version = f'version_{args.model_version}'
-    checkpoint = os.path.join(version_directory, model_version, 'checkpoints', args.model_checkpoint)
-    logger.info("load model checkpoint %s", checkpoint)
-    model = model.load_from_checkpoint(checkpoint, map_location=device, output_time_dim=output_time_dim,
+    checkpoint_basepath = os.path.join(version_directory, model_version, 'checkpoints')
+    if args.model_checkpoint is None:
+        checkpoint_path = get_best_checkpoint_path(path=checkpoint_basepath)
+    else:
+        checkpoint_path = os.path.join(checkpoint_basepath, args.model_checkpoint)
+    logger.info("load model checkpoint %s", checkpoint_path)
+    model = model.load_from_checkpoint(checkpoint_path, map_location=device, output_time_dim=output_time_dim,
                                        strict=not args.non_strict)
     model = model.to(device)
 
