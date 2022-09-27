@@ -7,13 +7,14 @@ from omegaconf import DictConfig
 import torch
 
 from dlwp.model.models.base import BaseModel
-from dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
+from dlwp.model.layers.healpix import HEALPixPadding, HEALPixLayer
 from dlwp.model.losses import LossOnStep
+from dlwp.model.layers.utils import Interpolate
 
 logger = logging.getLogger(__name__)
 
 
-class CubeSphereUnet(BaseModel, ABC):
+class HEALPixUnet(BaseModel, ABC):
     def __init__(
             self,
             encoder: DictConfig,
@@ -27,12 +28,12 @@ class CubeSphereUnet(BaseModel, ABC):
             decoder_input_channels: int,
             input_time_dim: int,
             output_time_dim: int,
-            cube_dim: int = 64,
+            nside: int = 32,
             batch_size: Optional[int] = None
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
-        cube sphere grid.
+        HEALPix grid.
 
         :param encoder: dictionary of instantiable parameters for the U-net encoder (see UnetEncoder docs)
         :param decoder: dictionary of instantiable parameters for the U-net decoder (see UnetDecoder docs)
@@ -48,7 +49,7 @@ class CubeSphereUnet(BaseModel, ABC):
             for both inputs and outputs. If this is zero, no decoder inputs should be provided as inputs to `forward`.
         :param input_time_dim: number of time steps in the input array
         :param output_time_dim: number of time steps in the output array
-        :param cube_dim: number of points on the side of a cube face
+        :param nside: number of points on the side of a HEALPix face
         :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
         """
         super().__init__(loss, batch_size=batch_size)
@@ -65,15 +66,15 @@ class CubeSphereUnet(BaseModel, ABC):
         # inputs: [B, input_time_dim, input_channels, F, H, W]
         # decoder_inputs: [B, input_time_dim + output_time_dim, decoder_input_channels, F, H, W]
         # constants: [n_constants, F, H, W]
-        example_input_array = [torch.randn(1, self.input_time_dim, self.input_channels, 6, cube_dim, cube_dim)]
+        example_input_array = [torch.randn(1, self.input_time_dim, self.input_channels, 12, nside, nside)]
         if self.decoder_input_channels > 0:
             example_input_array.append(
                 torch.randn(1, self.input_time_dim + self.output_time_dim, self.decoder_input_channels,
-                            6, cube_dim, cube_dim)
+                            12, nside, nside)
             )
         if self.n_constants > 0:
             example_input_array.append(
-                torch.randn(self.n_constants, 6, cube_dim, cube_dim)
+                torch.randn(self.n_constants, 12, nside, nside)
             )
         # Wrap in list so that Lightning interprets it correctly as a single arg to `forward`
         self.example_input_array = [example_input_array]
@@ -89,9 +90,6 @@ class CubeSphereUnet(BaseModel, ABC):
             input_time_dim=self.input_time_dim,
             output_time_dim=self.output_time_dim,
         )
-
-        #print(self.generator)
-        #exit()
 
         self.save_hyperparameters()
         self.configure_metrics()
@@ -230,9 +228,7 @@ class UnetEncoder(torch.nn.Module):
             dilations: list = None,
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
-            activation: Optional[DictConfig] = None,
-            add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            activation: Optional[DictConfig] = None
     ):
         super().__init__()
         self.n_channels = n_channels
@@ -240,8 +236,6 @@ class UnetEncoder(torch.nn.Module):
         self.pooling_type =pooling_type
         self.pooling = pooling
         self.activation = activation
-        self.add_polar_layer = add_polar_layer
-        self.flip_north_pole = flip_north_pole
 
         if dilations is None:
             # Defaults to [1, 1, 1...] in accordance with the number of unet levels
@@ -257,25 +251,20 @@ class UnetEncoder(torch.nn.Module):
         for n, curr_channel in enumerate(self.n_channels):
             modules = list()
             if n > 0 and self.pooling is not None:
-                pool_config = DictConfig(dict(
-                    _target_=self.pooling_type,
+                modules.append(HEALPixLayer(
+                    layer=self.pooling_type,
                     kernel_size=self.pooling
-                ))
-                modules.append(CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False))
+                    ))
             # Only do one convolution at the bottom of the U-net, since the other is in the decoder
             convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth // 2
             for _ in range(convolution_steps):
-                conv_config = DictConfig(dict(
-                    _target_='torch.nn.Conv2d',
+                modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
                     in_channels=old_channels,
                     out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    dilation=dilations[n],
-                    padding=0
-                ))
-                modules.append(CubeSpherePadding(((self.kernel_size - 1) // 2)*dilations[n]))
-                modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                               flip_north_pole=self.flip_north_pole))
+                    dilation=dilations[n]
+                    ))
                 if self.activation is not None:
                     modules.append(instantiate(self.activation))
                 old_channels = curr_channel
@@ -299,11 +288,10 @@ class UnetDecoder(torch.nn.Module):
             output_channels: int = 1,
             convolutions_per_depth: int = 2,
             kernel_size: int = 3,
+            dilations: list = None,
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
-            activation: Optional[DictConfig] = None,
-            add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            activation: Optional[DictConfig] = None
     ):
         super().__init__()
         self.n_channels = n_channels
@@ -311,8 +299,10 @@ class UnetDecoder(torch.nn.Module):
         self.upsampling_type = upsampling_type
         self.upsampling = upsampling
         self.activation = activation
-        self.add_polar_layer = add_polar_layer
-        self.flip_north_pole = flip_north_pole
+
+        if dilations is None:
+            # Defaults to [1, 1, 1...] in accordance with the number of unet levels
+            dilations = [1 for _ in range(len(n_channels))]
 
         assert output_channels >= 1
         assert convolutions_per_depth >= 1
@@ -335,62 +325,49 @@ class UnetDecoder(torch.nn.Module):
                     in_ch = input_channels[n] + curr_channel
                 else:
                     in_ch = curr_channel
-                conv_config = DictConfig(dict(
+                modules.append(HEALPixLayer(
                     _target_='torch.nn.Conv2d',
                     in_channels=in_ch,
                     out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    padding=0
-                ))
-                modules.append(CubeSpherePadding((self.kernel_size - 1) // 2))
-                modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                               flip_north_pole=self.flip_north_pole))
+                    dilation=dilations[n]
+                    ))
                 modules.append(instantiate(self.activation))
             # Add the conv + interpolate or transpose conv layer. If it is the last set, add the output conv.
             if n < len(n_channels) - 1:
                 if self.upsampling_type == 'interpolate':
                     # Regular conv + interpolation
-                    conv_config = DictConfig(dict(
-                        _target_='torch.nn.Conv2d',
+                    modules.append(HEALPixLayer(
+                        layer='torch.nn.Conv2d',
                         in_channels=curr_channel,
                         out_channels=n_channels[n + 1],
-                        kernel_size=self.kernel_size,
-                        padding=0
-                    ))
-                    modules.append(CubeSpherePadding((self.kernel_size - 1) // 2))
-                    modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                                   flip_north_pole=self.flip_north_pole))
+                        kernel_size=self.kernel_size
+                        ))
                     modules.append(instantiate(self.activation))
-                    upsample_config = DictConfig(dict(
-                        _target_='dlwp.model.layers.utils.Interpolate',
+                    modules.append(HEALPixLayer(
+                        layer=Interpolate,
                         scale_factor=self.upsampling,
                         mode='nearest'
-                    ))
-                    modules.append(CubeSphereLayer(upsample_config, add_polar_layer=False, flip_north_pole=False))
+                        ))
                 else:
                     # Upsample transpose conv
-                    upsample_config = DictConfig(dict(
-                        _target_='torch.nn.ConvTranspose2d',
+                    modules.append(HEALPixLayer(
+                        layer='torch.nn.ConvTranspose2d',
                         in_channels=curr_channel,
                         out_channels=n_channels[n + 1],
                         kernel_size=self.upsampling,
                         stride=self.upsampling,
                         padding=0
-                    ))
-                    modules.append(CubeSphereLayer(upsample_config, add_polar_layer=self.add_polar_layer,
-                                                   flip_north_pole=self.flip_north_pole))
+                        ))
                     modules.append(instantiate(self.activation))
             else:
                 # Add the output layer
-                conv_config = DictConfig(dict(
-                    _target_='torch.nn.Conv2d',
+                modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
                     in_channels=curr_channel,
                     out_channels=output_channels,
-                    kernel_size=1,
-                    padding=0
-                ))
-                modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                               flip_north_pole=self.flip_north_pole))
+                    kernel_size=1
+                    ))
             self.decoder.append(torch.nn.Sequential(*modules))
 
         self.decoder = torch.nn.ModuleList(self.decoder)
@@ -404,7 +381,7 @@ class UnetDecoder(torch.nn.Module):
         return x
 
 
-class Unet3PlusEncoder(torch.nn.Module):
+class Unet3plusEncoder(torch.nn.Module):
     def __init__(
             self,
             input_channels: int = 3,
@@ -414,9 +391,7 @@ class Unet3PlusEncoder(torch.nn.Module):
             dilations: list = None,
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
-            activation: Optional[DictConfig] = None,
-            add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            activation: Optional[DictConfig] = None
     ):
         super().__init__()
         self.n_channels = n_channels
@@ -424,8 +399,6 @@ class Unet3PlusEncoder(torch.nn.Module):
         self.pooling_type =pooling_type
         self.pooling = pooling
         self.activation = activation
-        self.add_polar_layer = add_polar_layer
-        self.flip_north_pole = flip_north_pole
 
         if dilations is None:
             # Defaults to [1, 1, 1...] in accordance with the number of unet levels
@@ -441,26 +414,21 @@ class Unet3PlusEncoder(torch.nn.Module):
         for n, curr_channel in enumerate(self.n_channels):
             modules = list()
             if n > 0 and self.pooling is not None:
-                pool_config = DictConfig(dict(
-                    _target_=self.pooling_type,
+                modules.append(HEALPixLayer(
+                    layer=self.pooling_type,
                     kernel_size=self.pooling
-                ))
-                modules.append(CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False))
+                    ))
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth//2  # <-- original (one conv)
             convolution_steps = convolutions_per_depth  # <-- two convs
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth*2  # <-- four convs (https://arxiv.org/pdf/2205.10972.pdf)
             for _ in range(convolution_steps):
-                conv_config = DictConfig(dict(
-                    _target_='torch.nn.Conv2d',
+                modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
                     in_channels=old_channels,
                     out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    dilation=dilations[n],
-                    padding=0
-                ))
-                modules.append(CubeSpherePadding(((self.kernel_size - 1) // 2)*dilations[n]))
-                modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                               flip_north_pole=self.flip_north_pole))
+                    dilation=dilations[n]
+                    ))
                 if self.activation is not None:
                     modules.append(instantiate(self.activation))
                 old_channels = curr_channel
@@ -489,9 +457,7 @@ class Unet3plusDecoder(torch.nn.Module):
             pooling: int = 2,
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
-            activation: Optional[DictConfig] = None,
-            add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            activation: Optional[DictConfig] = None
     ):
         super().__init__()
         self.n_channels = n_channels
@@ -499,8 +465,6 @@ class Unet3plusDecoder(torch.nn.Module):
         self.upsampling_type = upsampling_type
         self.upsampling = upsampling
         self.activation = activation
-        self.add_polar_layer = add_polar_layer
-        self.flip_north_pole = flip_north_pole
 
         if dilations is None:
             # Defaults to [1, 1, 1...] according to the number of unet levels
@@ -530,17 +494,13 @@ class Unet3plusDecoder(torch.nn.Module):
 
             # Skippers
             skip_dilation = 4  # According to Fig. 2 in https://arxiv.org/pdf/2205.10972.pdf
-            conv_config = DictConfig(dict(
-                _target_='torch.nn.Conv2d',
+            skip_modules.append(HEALPixLayer(
+                layer='torch.nn.Conv2d',
                 in_channels=curr_channel,
                 out_channels=curr_channel,
                 kernel_size=self.kernel_size,
-                dilation=skip_dilation,
-                padding=0
-            ))
-            skip_modules.append(CubeSpherePadding(((kernel_size - 1) // 2)*skip_dilation))
-            skip_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                                flip_north_pole=self.flip_north_pole))
+                dilation=skip_dilation
+                ))
             if self.activation is not None:
                 skip_modules.append(instantiate(self.activation))
 
@@ -553,9 +513,7 @@ class Unet3plusDecoder(torch.nn.Module):
                     upsampling=upsampling*pow2[-n:][ch_below_idx],
                     kernel_size=kernel_size,
                     dilation=dilations[n],
-                    activation=activation,
-                    add_polar_layer=add_polar_layer,
-                    flip_north_pole=flip_north_pole
+                    activation=activation
                     ))
 
             # Downpoolers
@@ -581,17 +539,13 @@ class Unet3plusDecoder(torch.nn.Module):
                         in_ch += channels_above  # Downpoolers keep originial number of channels
                 else:
                     in_ch = curr_channel
-                conv_config = DictConfig(dict(
-                    _target_='torch.nn.Conv2d',
+                conv_modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
                     in_channels=in_ch,
                     out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    dilation=dilations[n],
-                    padding=0
-                ))
-                conv_modules.append(CubeSpherePadding(((kernel_size - 1) // 2)*dilations[n]))
-                conv_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                               flip_north_pole=self.flip_north_pole))
+                    dilation=dilations[n]
+                    ))
                 if self.activation is not None:
                     conv_modules.append(instantiate(self.activation))
 
@@ -606,16 +560,13 @@ class Unet3plusDecoder(torch.nn.Module):
 
         # Linear Output layer
         conv_modules = list()
-        conv_config = DictConfig(dict(
-            _target_='torch.nn.Conv2d',
+        conv_modules.append(HEALPixLayer(
+            layer='torch.nn.Conv2d',
             in_channels=curr_channel*2,  # Residual connection
             out_channels=output_channels,
             kernel_size=3,
-            padding=0
-        ))
-        conv_modules.append(CubeSpherePadding((kernel_size - 1) // 2))
-        conv_modules.append(CubeSphereLayer(conv_config, add_polar_layer=self.add_polar_layer,
-                                            flip_north_pole=self.flip_north_pole))
+            dilation=dilations[-1]
+            ))
         self.output_layer = torch.nn.Sequential(*conv_modules)
 
     def forward(self, inputs: Sequence) -> torch.Tensor:
@@ -660,46 +611,36 @@ class UpSampler(torch.nn.Module):
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
             kernel_size: int = 3,
-            dilation: int = 1,
-            activation: Optional[DictConfig] = None,
-            add_polar_layer: bool = True,
-            flip_north_pole: bool = True
+            dilation: int = 1,  # Not considered!
+            activation: Optional[DictConfig] = None
     ):
         super().__init__()
         upsampler = []
         if upsampling_type == 'interpolate':
             # Regular conv + interpolation
-            conv_config = DictConfig(dict(
-                _target_='torch.nn.Conv2d',
+            upsampler.append(HEALPixLayer(
+                layer='torch.nn.Conv2d',
                 in_channels=input_channels,
                 out_channels=output_channels,
                 kernel_size=kernel_size,
-                dilation=dilation,
-                padding=0
-            ))
-            upsampler.append(CubeSpherePadding(((kernel_size - 1) // 2)*dilation))
-            upsampler.append(CubeSphereLayer(conv_config, add_polar_layer=add_polar_layer,
-                                             flip_north_pole=flip_north_pole))
+                ))
             if activation is not None:
                 upsampler.append(instantiate(activation))
-            upsample_config = DictConfig(dict(
-                _target_='dlwp.model.layers.utils.Interpolate',
+            upsampler.append(HEALPixLayer(
+                layer=Interpolate,
                 scale_factor=upsampling,
                 mode='nearest'
-            ))
-            upsampler.append(CubeSphereLayer(upsample_config, add_polar_layer=False, flip_north_pole=False))
+                ))
         else:
             # Upsample transpose conv
-            upsample_config = DictConfig(dict(
-                _target_='torch.nn.ConvTranspose2d',
+            upsampler.append(HEALPixLayer(
+                layer='torch.nn.ConvTranspose2d',
                 in_channels=input_channels,
                 out_channels=output_channels,
                 kernel_size=upsampling,
                 stride=upsampling,
                 padding=0
-            ))
-            upsampler.append(CubeSphereLayer(upsample_config, add_polar_layer=add_polar_layer,
-                                             flip_north_pole=flip_north_pole))
+                ))
             if activation is not None:
                 upsampler.append(instantiate(activation))
         self.upsampler = torch.nn.Sequential(*upsampler)
@@ -715,11 +656,10 @@ class DownPooler(torch.nn.Module):
             pooling: int = 2,
     ):
         super().__init__()
-        pool_config = DictConfig(dict(
-            _target_=pooling_type,
+        self.downpooler = HEALPixLayer(
+            layer=pooling_type,
             kernel_size=pooling
-        ))
-        self.downpooler = CubeSphereLayer(pool_config, add_polar_layer=False, flip_north_pole=False)
+            )
 
     def forward(self, x):
         return self.downpooler(x)
@@ -738,7 +678,7 @@ if __name__ == "__main__":
         )
     
     # Forward data through encoder and decoder
-    x = torch.randn(4, 3, 6, 256, 256)
+    x = torch.randn(4, 3, 12, 256, 256)
     encodings = encoder(x)
     for encoding in encodings:
         print(encoding.shape)

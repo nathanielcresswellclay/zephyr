@@ -24,7 +24,7 @@ def train(cfg):
     # Model
     input_channels = len(cfg.data.input_variables)
     output_channels = len(cfg.data.output_variables) if cfg.data.output_variables is not None else input_channels
-    n_constants = len(cfg.data.get('constants', {}))
+    n_constants = 0 if cfg.data.get('constants', {}) is None else len(cfg.data.get('constants', {}))
     decoder_input_channels = int(cfg.data.get('add_insolation', 0))
     cfg.model['input_channels'] = input_channels
     cfg.model['output_channels'] = output_channels

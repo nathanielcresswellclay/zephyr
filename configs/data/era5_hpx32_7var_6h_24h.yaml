@@ -1,10 +1,10 @@
 defaults:
   - module: time_series
-  - scaling: zeros
+  - scaling: classic
   - splits: default
 
-directory: /home/quicksilver2/jweyn/Data/DLWP
-prefix: era5_1deg_3h_CS64S_1979-2018_
+directory: /home/quicksilver2/karlbam/Data/DLWP/HPX32
+prefix: era5_1deg_3h_HPX32_1979-2018_
 suffix: ''
 data_format: classic
 input_variables:
