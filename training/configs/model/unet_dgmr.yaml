@@ -1,0 +1,29 @@
+defaults:
+  - decoder: unet_decoder
+  - encoder: unet_encoder
+  - loss: generator_mse
+  - optimizer: gan_adam
+  - scheduler: plateau
+
+_target_: dlwp.model.models.CubeSphereUnetDGMR
+_recursive_: false
+discriminator:
+  _target_: dlwp.model.models.dgmr.TemporalDiscriminator
+  num_layers: 3
+  internal_channels: 8
+  keep_time_dim: false
+  add_polar_layer: true
+input_time_dim: ${data.input_time_dim}
+output_time_dim: ${data.output_time_dim}
+cube_dim: ${data.cube_dim}
+batch_size: ${batch_size}
+disc_steps_per_iter: 1
+disc_start_epoch: 0
+disc_loss_in_validation: false
+gradient_clip_val: null
+
+# Parameters automatically overridden in train code
+input_channels: 6
+output_channels: 6
+n_constants: 2
+decoder_input_channels: 1

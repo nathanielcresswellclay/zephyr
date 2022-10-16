@@ -1,0 +1,26 @@
+defaults:
+  - module: time_series
+  - scaling: zeros
+  - splits: default
+
+directory: /home/quicksilver2/jweyn/Data/DLWP
+prefix: era5_1deg_3h_CS64S_1979-2018_
+suffix: ''
+input_variables:
+  - z500
+  - tau300-700
+  - z1000
+  - t2m0
+  - tcwv0
+  - t850
+output_variables: null
+constants:
+  land_sea_mask: lsm
+  topography: z
+input_time_dim: 2
+output_time_dim: 4
+data_time_step: 3H
+time_step: 6H
+gap: 6H
+add_insolation: true
+cube_dim: 64

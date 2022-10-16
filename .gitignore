@@ -111,3 +111,6 @@ assets/
 # Added for this project
 .idea
 .idea/
+
+# Output directories
+*/outputs
