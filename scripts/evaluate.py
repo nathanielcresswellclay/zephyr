@@ -6,6 +6,7 @@ import hydra
 import omegaconf as oc
 import multiprocessing
 
+import numpy as np
 import xarray as xr
 
 import matplotlib.pyplot as plt
@@ -19,7 +20,7 @@ def evaluate_forecast(
         ax: plt.axis = None,
         evaluator: EvaluatorBase = None,
         verification_da: xr.DataArray = None,
-        climatology_da: xr.DataArray = None
+        climatology_da: xr.DataArray = None,
         ) -> (plt.axis, str, dict):
     """
     Perform an analysis for a single forecast and variable. Optionally, default evaluation configurations are
@@ -46,8 +47,9 @@ def evaluate_forecast(
           f"'{model_name}' ###")
 
     # Initialize evaluator
-    from datetime import datetime as dt
-    times = slice(dt(year=2018, month=12, day=2), dt(year=2018, month=12, day=31))
+    #from datetime import datetime as dt
+    #times = slice(dt(year=2018, month=12, day=2), dt(year=2018, month=12, day=31))
+    #if 
     if evaluator is None: evaluator = hydra.utils.instantiate(cfg.evaluator, forecast_path=cfg.paths.forecast)#, times=times)
 
     # Verification and climatology are not transfered (shared) from previous to current analysis by default
@@ -63,9 +65,9 @@ def evaluate_forecast(
     else:
         if analysis.on_latlon:
             vname = evaluator.variable_metas[cfg.eval_variable]["fname_era5"]
-            verification_path = os.path.join(cfg.paths.verification + vname + ".nc")
+            verification_path = os.path.join(cfg.paths.verification_ll + vname + ".nc")
         else:
-            verification_path = os.path.join(cfg.paths.verification_ll + cfg.eval_variable + ".nc")
+            verification_path = os.path.join(cfg.paths.verification + cfg.eval_variable + ".nc")
         evaluator.generate_verification(verification_path=verification_path)
 
     if cfg.rescale_das:
@@ -124,7 +126,8 @@ def process_variable(
                 overrides += fc_dict["general_overrides"] 
             if "analysis_overrides" in fc_dict.keys() and analysis_name in fc_dict["analysis_overrides"].keys():
                 overrides += fc_dict['analysis_overrides'][analysis_name]
-            
+            if "global_overrides" in config["forecasts"].keys(): overrides += config["forecasts"]["global_overrides"]
+
             evaluator = model_library[model_name] if model_name in model_library.keys() else None
 
             # Perform analysis

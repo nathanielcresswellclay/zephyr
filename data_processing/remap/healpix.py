@@ -115,30 +115,6 @@ class HEALPixRemap(_BaseRemap):
         #thetas, phis = hp.pix2ang(self.nside, np.arange(hp.nside2npix(self.nside)))
         #self.hpxidcs = hp.ang2pix(self.nside, thetas, phis)#, nest=self.nested)
 
-    def remap_parallel(self, ds: xr.Dataset, vname: str, s_idx: int, l_idx: int) -> np.array:
-        """
-        Helper function to apply the mapping of individual samples (time steps) in parallel.
-
-        :param ds: The dataset containing the LatLon data
-        :param vname: The string of the variable in the dataset to be remapped
-        :param s_idx: The sample index
-        :param l_idx: The level index
-        :return: A numpy array containing the data remapped to the HEALPix
-        """
-        return self.ll2hpx(ds.variables[vname][s_idx, l_idx].values)
-
-    def inverse_remap_parallel(self, ds: xr.Dataset, vname: str, f_idx: int, s_idx: int) -> np.array:
-        """
-        Helper function to apply the inverse mapping of individual samples (time steps) in parallel.
-
-        :param ds: The dataset containing the LatLon data
-        :param vname: The string of the variable in the dataset to be remapped
-        :param f_idx: The forecast start time index
-        :param s_idx: The step in the forecast
-        :return: A numpy array containing the data remapped to LatLon
-        """
-        return self.hpx2ll(ds.variables[vname][f_idx, s_idx].values)
-
     def remap(
             self,
             file_path: str,
@@ -146,7 +122,8 @@ class HEALPixRemap(_BaseRemap):
             target_variable_name: str = "z500",
             poolsize: int = 20,
             chunk_ds: bool = True,
-            to_netcdf: bool = True
+            to_netcdf: bool = True,
+            times: xr.DataArray = None,
             ) -> xr.Dataset:
         """
         Takes a (preprocessed) LatLon dataset of shape [sample, varlev, lat, lon] and converts it into the HEALPix
@@ -158,12 +135,13 @@ class HEALPixRemap(_BaseRemap):
         :param poolsize: Number of processes to be used for the parallel remapping
         :param chunk_ds: Whether to chunk the dataset (recommended for fast data loading)
         :param to_netcdf: Whether to write the dataset to file
+        :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
         :return: The converted dataset in HPX convention
         """
 
         # Load .nc file in latlon format to extract latlon information and to initialize the remapper module
         ds_ll = xr.open_dataset(file_path)
-        #ds_ll = ds_ll.isel({"sample": slice(-30000, -1)})
+        if times is not None: ds_ll = ds_ll.sel({"sample": times})
 
         # Determine whether a "constant" or "variable" is processed
         const = False if "predictors" in list(ds_ll.keys()) else True
@@ -194,7 +172,7 @@ class HEALPixRemap(_BaseRemap):
                 data_hpx = np.zeros(dims, dtype=ds_ll.variables[vname])
 
                 # Iterate over all samples and levels, project them to HEALPix and store them in the predictors array
-                pbar = tqdm(ds_ll.coords["sample"])
+                pbar = tqdm(ds_ll.coords["sample"], disable=not self.verbose)
                 for s_idx, sample in enumerate(pbar):
                     pbar.set_description("Remapping time steps")
                     for l_idx, level in enumerate(ds_ll.coords["varlev"]):
@@ -204,9 +182,10 @@ class HEALPixRemap(_BaseRemap):
 
                 # Collect the arguments for each remapping call
                 arguments = []
-                for s_idx, sample in enumerate(ds_ll.coords["sample"]):
+                if self.verbose: print("Preparing arguments for parallel remapping")
+                for s_idx in tqdm(range(ds_ll.dims["sample"]), disable=not self.verbose):
                     for l_idx, level in enumerate(ds_ll.coords["varlev"]):
-                        arguments.append([self, ds_ll.variables[vname][f_idx, s_idx].values])
+                        arguments.append([self, ds_ll.variables[vname][s_idx, l_idx].values])
 
                 # Run the remapping in parallel
                 with multiprocessing.Pool(poolsize) as pool:
@@ -254,9 +233,9 @@ class HEALPixRemap(_BaseRemap):
         if chunk_ds:
             ds_hpx = to_chunked_dataset(ds=ds_hpx, chunking=chunksizes)
         if to_netcdf:
-            print("Dataset sucessfully built. Writing data to file...")
+            if self.verbose: print("Dataset sucessfully built. Writing data to file...")
             ds_hpx.to_netcdf(prefix + target_variable_name + ".nc")
-        print(ds_hpx.chunk())
+        #print(ds_hpx.chunk())
         #ds_hpx.to_zarr(prefix + target_variable_name + ".zarr", mode="w")
         return ds_hpx
 
@@ -298,7 +277,7 @@ class HEALPixRemap(_BaseRemap):
             fc_data_ll = np.zeros(dims, dtype=fc_ds_hpx.variables[vname])
 
             # Iterate over all samples and levels, project them to HEALPix and store them in the predictors array
-            pbar = tqdm(fc_ds_hpx.coords["time"])
+            pbar = tqdm(fc_ds_hpx.coords["time"], disable=not self.verbose)
             for f_idx, forecast_start_time in enumerate(pbar):
                 pbar.set_description("Remapping time steps")
                 for s_idx, step in enumerate(fc_ds_hpx.coords["step"]):
@@ -308,7 +287,8 @@ class HEALPixRemap(_BaseRemap):
             
             # Collect the arguments for each remapping call
             arguments = []
-            for f_idx, forecast_start_time in enumerate(fc_ds_hpx.coords["time"]):
+            if self.verbose: print("Preparing arguments for parallel remapping")
+            for f_idx in tqdm(range(fc_ds_hpx.dims["time"]), disable=not self.verbose):
                 for s_idx, step in enumerate(fc_ds_hpx.coords["step"]):
                     arguments.append([self, fc_ds_hpx.variables[vname][f_idx, s_idx].values])
 
@@ -337,7 +317,7 @@ class HEALPixRemap(_BaseRemap):
         # Build LatLon forecast dataset
         fc_ds_ll = xr.Dataset(coords=coords,
                               data_vars={vname: (list(coords.keys()), fc_data_ll)})
-        if to_netcdf: fc_ds_ll.to_netcdf(f"{prefix}LL_{model_name}_{vname}")
+        if to_netcdf: fc_ds_ll.to_netcdf(f"{prefix}LL_{model_name.lower().replace(' ', '_')}_{vname}")
 
         return fc_ds_ll
 
@@ -393,7 +373,6 @@ class HEALPixRemap(_BaseRemap):
         :param visualize: (Optional) Whether to visualize the data or not
         :return: An array of shape [height=latitude, width=longitude] containing the latlon data
         """
-
         # Recompensate array indices [0, 0] representing top left and not bottom right corner (required for fyx2hpxidx)
         #data = data[[9, 8, 11, 10, 6, 5, 4, 7, 1, 0, 3, 2]]
         data = data[[8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]]

@@ -1,11 +1,8 @@
 # Original LatLon verification
-verification: /home/disk/quicksilver/nacc/Data/ERA5/1deg/1979-2022_era5_1deg_3h_
+verification_ll: /home/disk/quicksilver/nacc/Data/ERA5/1deg/1979-2022_era5_1deg_3h_
 
 # Verification remapped to geometry (CS, HPX, ...)
-verification_ll: /home/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1979-2018_
-
-# LatLon climatology
-climatology: /home/rhodium/dlwp/data/LL181x360/climatology/2016-2018_era5_1deg_3h_climatology_
+verification: /home/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1979-2018_
 
 # Scaling file
 scale_file: training/configs/data/scaling/classic.yaml

@@ -163,6 +163,7 @@ class EvaluatorBase(object):
         self.on_latlon = on_latlon
         self.poolsize = poolsize
         self.verbose = verbose
+        self.is_latitude_evaluator = False
  
         # Initialize verification attributes 
         self.verification_path = None
@@ -204,6 +205,7 @@ class EvaluatorBase(object):
         :param netcdf_dst_path: If not None, writes climatology to this path
         """
         if self.verbose: print(f"Generating climatology from {verification_path}")
+
         if self.on_latlon:
             climatology_ds = self._daily_climo_time_series(
                 verif_ds=xr.open_dataset(verification_path)#.sel({"time": slice(self.forecast_da.time.values[0], self.forecast_da.time.values[-1] + self.forecast_da.step[-1])}),
@@ -264,6 +266,7 @@ class EvaluatorBase(object):
                                     end=valid_init + (self.num_forecast_steps - 1) * self.forecast_dt,
                                     freq=pd.Timedelta(self.forecast_dt))
             ds_sel_dict = {time_dim_name: samples}
+            if self.is_latitude_evaluator: ds_sel_dict["latitude"] = self.forecast_da.coords["lat"][:180]
             if level is not None: ds_sel_dict["level"] = level
             arguments.append([verification_path, vname, ds_sel_dict])
 
@@ -295,7 +298,6 @@ class EvaluatorBase(object):
         :param climatology_path: The path to the climatology file
         :param mean: Whether to return a single value or an array of length forecast steps
         """
-
         # Ensure climatology file exists
         if self.climatology_da is None:
             if climatology_path is None: 
@@ -735,8 +737,8 @@ class EvaluatorBase(object):
             verif_image = self.faces2image(data=verif[idx])
 
             # Plot sphere data
-            plot_image(fig=fig, ax=ax[0], data=forec_image, vmin=vmin, vmax=vmax, title="Verification")
-            plot_image(fig=fig, ax=ax[1], data=verif_image, vmin=vmin, vmax=vmax, title="Forecast")
+            plot_image(fig=fig, ax=ax[0], data=forec_image, vmin=vmin, vmax=vmax, title="Forecast")
+            plot_image(fig=fig, ax=ax[1], data=verif_image, vmin=vmin, vmax=vmax, title="Verification")
             plot_image(fig=fig, ax=ax[2], data=np.sqrt((forec_image-verif_image)**2), vmin=vmin_diff, vmax=vmax_diff,
                        title="RMSE", cmap="PuRd")
 
@@ -744,6 +746,83 @@ class EvaluatorBase(object):
             fig.tight_layout()
             fig.savefig(os.path.join(plot_path, f"step_{str(int(step)).zfill(4)}h.png"), format="png")
             plt.close(fig)
+
+
+class EvaluatorLL(EvaluatorBase):
+    
+    """
+    EvaluatorLL class implementing the abstract EvaluatorBase for use cases where a model was trained on plain LatLon.
+    """
+    
+    def __init__(
+            self,
+            forecast_path: str = None,
+            verification_path: str = None,
+            eval_variable: str = None,
+            unit_conversion: float = None,
+            on_latlon: bool = True,
+            times: xr.DataArray = None,
+            poolsize: int = 30,
+            verbose: bool = True
+            ):
+        
+        """
+        Initialize EvaluatorCS object. 
+        
+        :param forecast_path: string: 
+               Path to forcast file. EvaluatorCS will attempt to initialize around
+               the given forecast_path. If file does not already exist at this location, 
+               any generated forecasts will be saved there. If None, path to generated
+               forecast will be created automatically. 
+        :param verification_path: string:
+               Path to the according ground truth file.
+        :param eval_variable: string:
+              variable used to calculate evaluation metrics      
+        :param unit_conversion: float: factor to convert units in forecast file 
+        :param on_latlon: bool: instructions whether to map CS forecast and predictor to LL
+        :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
+        """
+        super().__init__(
+            forecast_path=forecast_path,
+            eval_variable=eval_variable,
+            unit_conversion=unit_conversion,
+            on_latlon=on_latlon,
+            poolsize=poolsize,
+            verbose=verbose,
+            )
+
+        self.face_names = ["Earth"]
+        self.plot_origin = "lower"
+        self.is_latitude_evaluator = True
+
+        # initialize forecast around file or configuration if given
+        if self.forecast_path is not None:
+            if os.path.isfile(self.forecast_path):
+                if self.unit_conversion is None:
+                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
+                else: 
+                    if self.verbose: print(f"Converting values in forecast with by factor {self.unit_conversion}")
+                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]*self.unit_conversion
+                self.forecast_da = self.forecast_da.isel({"time": slice(0, 22)})
+                #if times is not None: self.forecast_da = self.forecast_da.sel({"time": times})
+                self._get_metadata_from_da(self.forecast_da)
+                if self.verbose:
+                    print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
+            else: 
+                print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")        
+            self.forecast_da = self.forecast_da.isel(face=0).rename({"height": "lat", "width": "lon"})
+
+    def faces2image(
+        self,
+        data: np.array
+        ) -> np.array:
+        """
+        Nothing to do since the data of the LatLon evaluator only has one single face.
+
+        :param data: The data array of shape [height, width]
+        :return: Numpy array of size [height, width].
+        """
+        return data
 
 
 class EvaluatorCS(EvaluatorBase):
@@ -761,7 +840,7 @@ class EvaluatorCS(EvaluatorBase):
             remap_config: dict = None,
             unit_conversion: float = None,
             on_latlon: bool = True,
-            times: xr.DataArray = None,
+            times: str = None,
             poolsize: int = 30,
             verbose: bool = True
             ):
@@ -783,7 +862,7 @@ class EvaluatorCS(EvaluatorBase):
                from the CubeSphere
         :param unit_conversion: float: factor to convert units in forecast file 
         :param on_latlon: bool: instructions whether to map CS forecast and predictor to LL
-        :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
+        :param times: A string indicating start and end date, e.g., "2016-01-01--2018-12-31"
         :param poolsize: Number of processes used for parallelization
         """
         super().__init__(
@@ -805,6 +884,10 @@ class EvaluatorCS(EvaluatorBase):
                                             '/home/disk/brass/nacc/map_files/O1/map_CS64_LL121x240.nc')}
         else:
             self.cs_config = remap_config
+
+        if times is not None:
+            t_start, t_stop = times.split("--")
+            times = slice(np.datetime64(t_start), np.datetime64(t_stop))
 
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
@@ -832,6 +915,7 @@ class EvaluatorCS(EvaluatorBase):
                     print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
             else: 
                 print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
+                exit()
     
     def convert_to_ll(
             self,
@@ -914,7 +998,7 @@ class EvaluatorHPX(EvaluatorBase):
             remap_config: dict = None,
             unit_conversion: float = None,
             on_latlon: bool = True,
-            times: xr.DataArray = None,
+            times: str = None,
             poolsize: int = 30,
             verbose: bool = True
             ):
@@ -936,7 +1020,7 @@ class EvaluatorHPX(EvaluatorBase):
                from the HEALPix
         :param unit_conversion: float: factor to convert units in forecast file 
         :param on_latlon: bool: instructions whether to map HPX forecast and predictor to LL
-        :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
+        :param times: A string indicating start and end date, e.g., "2016-01-01--2018-12-31"
         :param poolsize: Number of processes used for parallelization
         """
         super().__init__(
@@ -953,6 +1037,10 @@ class EvaluatorHPX(EvaluatorBase):
 
         if ".nc" not in verification_path:
             verification_path = verification_path + variable_metas[eval_variable]["fname_era5"] + ".nc"
+
+        if times is not None:
+            t_start, t_stop = times.split("--")
+            times = slice(np.datetime64(t_start), np.datetime64(t_stop))
 
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
@@ -980,7 +1068,8 @@ class EvaluatorHPX(EvaluatorBase):
                     print(f"Initialized EvaluatorHPX around file {self.forecast_path} for {self.eval_variable}")
             else: 
                 print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
-    
+                exit()
+
     def convert_to_ll(
             self,
             forecast_path: str,

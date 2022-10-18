@@ -3,6 +3,6 @@ on_latlon: True
 method: get_acc
 arguments:
   mean: False
-  climatology_path: ${paths.climatology}${eval_variable}.nc
+  climatology_path: /home/rhodium/dlwp/data/LL181x360/climatology/2016-2018_era5_1deg_3h_climatology_${eval_variable}.nc
 plot_method: plot_acc
 skip: False
