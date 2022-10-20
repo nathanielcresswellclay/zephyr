@@ -6,7 +6,6 @@ import hydra
 import omegaconf as oc
 import multiprocessing
 
-import numpy as np
 import xarray as xr
 
 import matplotlib.pyplot as plt
@@ -47,9 +46,6 @@ def evaluate_forecast(
           f"'{model_name}' ###")
 
     # Initialize evaluator
-    #from datetime import datetime as dt
-    #times = slice(dt(year=2018, month=12, day=2), dt(year=2018, month=12, day=31))
-    #if 
     if evaluator is None: evaluator = hydra.utils.instantiate(cfg.evaluator, forecast_path=cfg.paths.forecast)#, times=times)
 
     # Verification and climatology are not transfered (shared) from previous to current analysis by default
@@ -122,11 +118,12 @@ def process_variable(
                          f"+paths.eval_directory={config['evaluation_directory']}",
                          f"eval_variable={vname}",
                          f"analysis={analysis_name}"]
-            if "general_overrides" in fc_dict.keys():
-                overrides += fc_dict["general_overrides"] 
+            if "forecast_overrides" in fc_dict.keys():
+                overrides += fc_dict["forecast_overrides"] 
             if "analysis_overrides" in fc_dict.keys() and analysis_name in fc_dict["analysis_overrides"].keys():
                 overrides += fc_dict['analysis_overrides'][analysis_name]
-            if "global_overrides" in config["forecasts"].keys(): overrides += config["forecasts"]["global_overrides"]
+            if "global_overrides" in config["forecasts"].keys() and config["forecasts"]["global_overrides"] is not None:
+                overrides += config["forecasts"]["global_overrides"]
 
             evaluator = model_library[model_name] if model_name in model_library.keys() else None
 

@@ -80,13 +80,13 @@ class HEALPixRemap(_BaseRemap):
         # https://github.com/astropy/reproject/issues/87
         # https://docs.astropy.org/en/latest/wcs/supported_projections.html
         wcs_input_dict = {
-            'CTYPE1': 'RA',  # can be further specified with, e.g., RA---MOL, GLON-MOL, ELON-MOL
+            'CTYPE1': 'RA---CAR',  # can be further specified with, e.g., RA---MOL, GLON-MOL, ELON-MOL
             'CUNIT1': 'deg',
             'CDELT1': -resolution*resolution_factor,  # -r produces for some reason less NaNs
             'CRPIX1': (longitudes)/2,
             'CRVAL1': 180.0,
-            'NAXIS1': longitudes,
-            'CTYPE2': 'DEC',  # can be further specified with, e.g., DEC--MOL, GLAT-MOL, GLAT-MOL 
+            'NAXIS1': longitudes,  # does not seem to have an effect
+            'CTYPE2': 'DEC--CAR',  # can be further specified with, e.g., DEC--MOL, GLAT-MOL, ELAT-MOL 
             'CUNIT2': 'deg',
             'CDELT2': -resolution,
             'CRPIX2': (latitudes+1)/2,
@@ -96,13 +96,13 @@ class HEALPixRemap(_BaseRemap):
         self.wcs_ll2hpx = ap.wcs.WCS(wcs_input_dict)
 
         wcs_input_dict = {
-            'CTYPE1': 'RA',  # can be further specified with, e.g., RA---MOL, GLON-MOL, ELON-MOL
+            'CTYPE1': 'RA---CAR',  # can be further specified with, e.g., RA---MOL, GLON-MOL, ELON-MOL
             'CUNIT1': 'deg',
             'CDELT1': resolution*resolution_factor,
             'CRPIX1': (longitudes)/2,
-            'CRVAL1': 180.0,
+            'CRVAL1': 179.0,
             'NAXIS1': longitudes,
-            'CTYPE2': 'DEC',  # can be further specified with, e.g., DEC--MOL, GLAT-MOL, GLAT-MOL 
+            'CTYPE2': 'DEC--CAR',  # can be further specified with, e.g., DEC--MOL, GLAT-MOL, ELAT-MOL 
             'CUNIT2': 'deg',
             'CDELT2': resolution,
             'CRPIX2': (latitudes+1)/2,

@@ -217,7 +217,12 @@ class EvaluatorBase(object):
         else:
             verif_ds = xr.open_dataset(self.verification_path).rename(
                 {"sample": "time", "predictors": self.eval_variable}
-                ).drop_vars(["lat", "lon", "mean", "std"])
+                )
+            for vname in ["lat", "lon", "mean", "std"]:
+                try:
+                    verif_ds = verif_ds.drop_vars(vname)
+                except ValueError:
+                    pass
             climatology_ds = self._daily_climo_time_series(verif_ds)
 
             # Bring climatology in compatible shape with verification
@@ -332,11 +337,12 @@ class EvaluatorBase(object):
             verif = self.verification_da.transpose("time", "step", "lat", "lon")
             axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
         else:
+            weights = None  # No latitude weighting on the native mesh
             # Enforce aligning dimensions
             forec = self.forecast_da.transpose("time", "step", "face", "height", "width")
             verif = self.verification_da.transpose("time", "step", "face", "height", "width")
             axis_mean = (0, 1, 2, 3, 4) if mean else (0, 2, 3, 4)
-        return self._compute_mse(forec=forec, verif=verif, axis_mean=axis_mean)
+        return self._compute_mse(forec=forec, verif=verif, axis_mean=axis_mean, weights=weights)
         
     def get_rmse(
             self,
@@ -880,8 +886,8 @@ class EvaluatorCS(EvaluatorBase):
         # initialize configuration of CubeSphereRemap
         if remap_config is None:
             self.cs_config = {'path_to_remapper': '/home/disk/brume/nacc/tempestremap/bin',
-                              'map_files': ('/home/disk/brass/nacc/map_files/O1/map_LL121x240_CS64.nc',
-                                            '/home/disk/brass/nacc/map_files/O1/map_CS64_LL121x240.nc')}
+                              'map_files': ('/home/disk/brass/nacc/map_files/O2/map_LL121x240_CS64.nc',
+                                            '/home/disk/brass/nacc/map_files/O2/map_CS64_LL121x240.nc')}
         else:
             self.cs_config = remap_config
 
@@ -943,12 +949,12 @@ class EvaluatorCS(EvaluatorBase):
 
         # create netcdf from ds to go into remapper
         da.load().to_netcdf('cs_data.nc')
-        
+
         # map CS data to intermediate file
         csr.convert_from_faces('cs_data.nc', 'tmp_data.nc')
         # map to LL
         csr.inverse_remap('tmp_data.nc', 'll_data.nc')
-        
+
         ll_da = xr.open_dataset('ll_data.nc')[var_name].load()
         
         # clear working directory 
