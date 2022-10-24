@@ -1,15 +1,15 @@
 defaults:
-  - decoder: tp_unet_decoder
-  - encoder: tp_unet_encoder
+  - encoder: hpx_unet3plus_encoder
+  - decoder: hpx_unet3plus_decoder
   - loss: mse
   - optimizer: adam
   - scheduler: plateau
 
-_target_: dlwp.model.models.CubeSphereUnet
+_target_: dlwp.model.models.HEALPixUnet
 _recursive_: false
 input_time_dim: ${data.input_time_dim}
 output_time_dim: ${data.output_time_dim}
-cube_dim: ${data.cube_dim}
+nside: ${data.nside}
 batch_size: ${batch_size}
 
 # Parameters automatically overridden in train code
@@ -17,7 +17,7 @@ batch_size: ${batch_size}
 # output_channels
 # n_constants
 # decoder_input_channels
-input_channels: 7
-output_channels: 1
+input_channels: 6
+output_channels: 6
 n_constants: 2
 decoder_input_channels: 1

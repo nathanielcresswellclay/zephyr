@@ -6,9 +6,9 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
 
-from dlwp.model.models.base import BaseModel
-from dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
-from dlwp.model.losses import LossOnStep
+from training.dlwp.model.models.base import BaseModel
+from training.dlwp.model.layers.cube_sphere import CubeSpherePadding, CubeSphereLayer
+from training.dlwp.model.losses import LossOnStep
 
 logger = logging.getLogger(__name__)
 

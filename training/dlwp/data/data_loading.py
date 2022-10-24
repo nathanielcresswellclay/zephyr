@@ -9,7 +9,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 import xarray as xr
 
-from dlwp.utils import insolation
+from training.dlwp.utils import insolation
 
 logger = logging.getLogger(__name__)
 

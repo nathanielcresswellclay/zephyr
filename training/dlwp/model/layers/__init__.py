@@ -1,3 +1,5 @@
-from .cube_sphere import CubeSphereLayer, CubeSpherePadding
+from .unet import CubeSphereUnet
+from .dgmr import CubeSphereUnetDGMR
+from .hpx_unet import HEALPixUnet
 
-__all__ = ['CubeSphereLayer', 'CubeSpherePadding']
+__all__ = ['CubeSphereUnet', 'CubeSphereUnetDGMR', 'HEALPixUnet']
