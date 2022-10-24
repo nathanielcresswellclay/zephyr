@@ -1,4 +1,4 @@
-_target_: dlwp.model.models.unet.UnetDecoder
+_target_: training.dlwp.model.models.unet.UnetDecoder
 _recursive_: false
 n_channels:
   - 256

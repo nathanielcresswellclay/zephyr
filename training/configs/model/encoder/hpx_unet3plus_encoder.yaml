@@ -1,4 +1,4 @@
-_target_: dlwp.model.models.hpx_unet.Unet3plusEncoder
+_target_: training.dlwp.model.models.hpx_unet.Unet3plusEncoder
 _recursive_: false
 n_channels:
   - 64
