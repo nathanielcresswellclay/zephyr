@@ -1,4 +1,4 @@
-_target_: dlwp.data.modules.TimeSeriesDataModule
+_target_: training.dlwp.data.modules.TimeSeriesDataModule
 directory: ${data.directory}
 prefix: ${data.prefix}
 suffix: ${data.suffix}

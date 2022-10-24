@@ -5,7 +5,7 @@ defaults:
   - optimizer: adam
   - scheduler: plateau
 
-_target_: dlwp.model.models.CubeSphereUnet
+_target_: training.dlwp.model.models.CubeSphereUnet
 _recursive_: false
 input_time_dim: ${data.input_time_dim}
 output_time_dim: ${data.output_time_dim}

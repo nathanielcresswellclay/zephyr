@@ -1,4 +1,4 @@
-_target_: dlwp.model.losses.GeneratorLoss
+_target_: training.dlwp.model.losses.GeneratorLoss
 _recursive_: true
 loss:
   _target_: torch.nn.MSELoss

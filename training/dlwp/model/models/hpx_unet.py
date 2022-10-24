@@ -441,37 +441,37 @@ class Unet3plusEncoder(torch.nn.Module):
         for n, curr_channel in enumerate(self.n_channels):
             modules = list()
             if n > 0 and self.pooling is not None:
-                #modules.append(HEALPixLayer(
-                #    layer=self.pooling_type,
-                #    pooling=self.pooling
-                #    ))
-                modules.append(DownPooler(
-                    input_channels=old_channels,
-                    output_channels=old_channels,
-                    pooling_type=pooling_type,
-                    pooling=pooling,
-                    activation=self.activation
+                modules.append(HEALPixLayer(
+                    layer=self.pooling_type,
+                    pooling=self.pooling
                     ))
+                #modules.append(DownPooler(
+                #    input_channels=old_channels,
+                #    output_channels=old_channels,
+                #    pooling_type=pooling_type,
+                #    pooling=pooling,
+                #    activation=self.activation
+                #    ))
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth//2  # <-- original (one conv)
             convolution_steps = convolutions_per_depth  # <-- two convs
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth*2  # <-- four convs (https://arxiv.org/pdf/2205.10972.pdf)
             for _ in range(convolution_steps):
-                #modules.append(HEALPixLayer(
-                #    layer='torch.nn.Conv2d',
-                #    in_channels=old_channels,
-                #    out_channels=curr_channel,
-                #    kernel_size=self.kernel_size,
-                #    dilation=dilations[n]
-                #    ))
-                #if self.activation is not None:
-                #    modules.append(instantiate(self.activation))
-                modules.append(ConvBlock(
-                    input_channels=old_channels,
-                    output_channels=curr_channel,
+                modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
+                    in_channels=old_channels,
+                    out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    dilation=dilations[n],
-                    activation=activation
+                    dilation=dilations[n]
                     ))
+                if self.activation is not None:
+                    modules.append(instantiate(self.activation))
+                #modules.append(ConvBlock(
+                #    input_channels=old_channels,
+                #    output_channels=curr_channel,
+                #    kernel_size=self.kernel_size,
+                #    dilation=dilations[n],
+                #    activation=activation
+                #    ))
                 old_channels = curr_channel
             self.encoder.append(torch.nn.Sequential(*modules))
 
@@ -559,17 +559,17 @@ class Unet3plusDecoder(torch.nn.Module):
 
             # Downpoolers
             for ch_above_idx, channels_above in enumerate(input_channels[::-1][:len(input_channels)-1-n]):
-                #pool_modules.append(DownPooler(
-                #    pooling_type=pooling_type,
-                #    pooling=pooling*pow2[n+1:][ch_above_idx]
-                #    ))
                 pool_modules.append(DownPooler(
-                    input_channels=channels_above,
-                    output_channels=channels_above,
                     pooling_type=pooling_type,
-                    pooling=pooling*pow2[n+1:][ch_above_idx],
-                    activation=self.activation
+                    pooling=pooling*pow2[n+1:][ch_above_idx]
                     ))
+                #pool_modules.append(DownPooler(
+                #    input_channels=channels_above,
+                #    output_channels=channels_above,
+                #    pooling_type=pooling_type,
+                #    pooling=pooling*pow2[n+1:][ch_above_idx],
+                #    activation=self.activation
+                #    ))
 
             # Convolvers
             convolution_steps = convolutions_per_depth // 2 if n == 0 else convolutions_per_depth
@@ -587,22 +587,22 @@ class Unet3plusDecoder(torch.nn.Module):
                         in_ch += channels_above  # Downpoolers keep originial number of channels
                 else:
                     in_ch = curr_channel
-                #conv_modules.append(HEALPixLayer(
-                #    layer='torch.nn.Conv2d',
-                #    in_channels=in_ch,
-                #    out_channels=curr_channel,
-                #    kernel_size=self.kernel_size,
-                #    dilation=dilations[n]
-                #    ))
-                #if self.activation is not None:
-                #    conv_modules.append(instantiate(self.activation))
-                conv_modules.append(ConvBlock(
-                    input_channels=in_ch,
-                    output_channels=curr_channel,
+                conv_modules.append(HEALPixLayer(
+                    layer='torch.nn.Conv2d',
+                    in_channels=in_ch,
+                    out_channels=curr_channel,
                     kernel_size=self.kernel_size,
-                    dilation=dilations[n],
-                    activation=activation
+                    dilation=dilations[n]
                     ))
+                if self.activation is not None:
+                    conv_modules.append(instantiate(self.activation))
+                #conv_modules.append(ConvBlock(
+                #    input_channels=in_ch,
+                #    output_channels=curr_channel,
+                #    kernel_size=self.kernel_size,
+                #    dilation=dilations[n],
+                #    activation=activation
+                #    ))
 
             self.decoder.append(torch.nn.ModuleDict(
                 {"skips": torch.nn.Sequential(*skip_modules),
