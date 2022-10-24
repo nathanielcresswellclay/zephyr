@@ -1,6 +1,6 @@
 from abc import ABC
 import logging
-from typing import Any, Dict, Optional, Sequence, Union, Tuple
+from typing import Any, Dict, Optional, Sequence, Union
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -8,9 +8,8 @@ import torch
 
 from training.dlwp.model.models.base import BaseModel
 from training.dlwp.model.layers.healpix import HEALPixPadding, HEALPixLayer
-from training.dlwp.model.losses import LossOnStep, SSIM
+from training.dlwp.model.losses import LossOnStep
 from training.dlwp.model.layers.utils import Interpolate
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +29,8 @@ class HEALPixUnet(BaseModel, ABC):
             input_time_dim: int,
             output_time_dim: int,
             nside: int = 32,
-            batch_size: Optional[int] = None,
-            ):
+            batch_size: Optional[int] = None
+    ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
         HEALPix grid.
@@ -102,14 +101,12 @@ class HEALPixUnet(BaseModel, ABC):
         metrics = {
             'loss': instantiate(self.loss_cfg),
             'mse': torch.nn.MSELoss(),
-            'mae': torch.nn.L1Loss(),
-            'ssim': SSIM()
+            'mae': torch.nn.L1Loss()
         }
         for step in range(self.generator.integration_steps):
             metrics[f'loss_{step}'] = LossOnStep(metrics['loss'], self.input_time_dim, step)
         self.metrics = torch.nn.ModuleDict(metrics)
         self.loss = self.metrics['loss']
-        self.ssim = self.metrics["ssim"]
 
     def configure_optimizers(
             self
@@ -128,30 +125,6 @@ class HEALPixUnet(BaseModel, ABC):
             }
         return optimizer
 
-    def training_step(
-            self,
-            batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
-            batch_idx: int  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
-        inputs, targets = batch
-        outputs = self(inputs)
-        loss = self.loss(outputs, targets)
-        self.log('loss', loss, batch_size=self.batch_size)
-        return loss# - torch.log(ssim)
-
-    def validation_step(
-            self,
-            batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
-            batch_idx: int  # pylint: disable=unused-argument
-    ) -> torch.Tensor:
-        inputs, targets = batch
-        outputs = self(inputs)
-        loss = self.loss(outputs, targets)
-        self.log('loss', loss, sync_dist=True, batch_size=self.batch_size)
-        for m, metric in self.metrics.items():
-            self.log(f'val_{m}', metric(outputs, targets), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
-        return loss
-
     def forward(self, inputs: Sequence, output_only_last=False) -> torch.Tensor:
         return self.generator(inputs, output_only_last)
 
@@ -167,7 +140,7 @@ class IterativeUnet(torch.nn.Module):
             decoder_input_channels: int,
             input_time_dim: int,
             output_time_dim: int,
-            ):
+    ):
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
@@ -256,7 +229,7 @@ class UnetEncoder(torch.nn.Module):
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
             activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
         self.n_channels = n_channels
         self.kernel_size = kernel_size
@@ -319,7 +292,7 @@ class UnetDecoder(torch.nn.Module):
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
             activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
         self.n_channels = n_channels
         self.kernel_size = kernel_size
@@ -419,7 +392,7 @@ class Unet3plusEncoder(torch.nn.Module):
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
             activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
         self.n_channels = n_channels
         self.kernel_size = kernel_size
@@ -443,15 +416,8 @@ class Unet3plusEncoder(torch.nn.Module):
             if n > 0 and self.pooling is not None:
                 modules.append(HEALPixLayer(
                     layer=self.pooling_type,
-                    pooling=self.pooling
+                    kernel_size=self.pooling
                     ))
-                #modules.append(DownPooler(
-                #    input_channels=old_channels,
-                #    output_channels=old_channels,
-                #    pooling_type=pooling_type,
-                #    pooling=pooling,
-                #    activation=self.activation
-                #    ))
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth//2  # <-- original (one conv)
             convolution_steps = convolutions_per_depth  # <-- two convs
             #convolution_steps = convolutions_per_depth if n < len(self.n_channels) - 1 else convolutions_per_depth*2  # <-- four convs (https://arxiv.org/pdf/2205.10972.pdf)
@@ -465,13 +431,6 @@ class Unet3plusEncoder(torch.nn.Module):
                     ))
                 if self.activation is not None:
                     modules.append(instantiate(self.activation))
-                #modules.append(ConvBlock(
-                #    input_channels=old_channels,
-                #    output_channels=curr_channel,
-                #    kernel_size=self.kernel_size,
-                #    dilation=dilations[n],
-                #    activation=activation
-                #    ))
                 old_channels = curr_channel
             self.encoder.append(torch.nn.Sequential(*modules))
 
@@ -499,7 +458,7 @@ class Unet3plusDecoder(torch.nn.Module):
             upsampling_type: str = 'interpolate',
             upsampling: int = 2,
             activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
         self.n_channels = n_channels
         self.kernel_size = kernel_size
@@ -563,13 +522,6 @@ class Unet3plusDecoder(torch.nn.Module):
                     pooling_type=pooling_type,
                     pooling=pooling*pow2[n+1:][ch_above_idx]
                     ))
-                #pool_modules.append(DownPooler(
-                #    input_channels=channels_above,
-                #    output_channels=channels_above,
-                #    pooling_type=pooling_type,
-                #    pooling=pooling*pow2[n+1:][ch_above_idx],
-                #    activation=self.activation
-                #    ))
 
             # Convolvers
             convolution_steps = convolutions_per_depth // 2 if n == 0 else convolutions_per_depth
@@ -596,13 +548,6 @@ class Unet3plusDecoder(torch.nn.Module):
                     ))
                 if self.activation is not None:
                     conv_modules.append(instantiate(self.activation))
-                #conv_modules.append(ConvBlock(
-                #    input_channels=in_ch,
-                #    output_channels=curr_channel,
-                #    kernel_size=self.kernel_size,
-                #    dilation=dilations[n],
-                #    activation=activation
-                #    ))
 
             self.decoder.append(torch.nn.ModuleDict(
                 {"skips": torch.nn.Sequential(*skip_modules),
@@ -618,7 +563,6 @@ class Unet3plusDecoder(torch.nn.Module):
         conv_modules.append(HEALPixLayer(
             layer='torch.nn.Conv2d',
             in_channels=curr_channel*2,  # Residual connection
-            #out_channels=output_channels//2,
             out_channels=output_channels,
             kernel_size=3,
             dilation=dilations[-1]
@@ -655,66 +599,8 @@ class Unet3plusDecoder(torch.nn.Module):
 
         # Linear output residual skip connection
         x = self.output_layer(torch.cat([x, inputs[0]], dim=1))
-        #x = torch.cat([x, inputs[0]], dim=1)
-        #x = torch.cat([self.output_layer(x), self.output_layer(x)], dim=1)
 
         return x
-
-
-class ConvBlock(torch.nn.Module):
-    """
-    A convolution block as reported in Figure 4 (d) of https://arxiv.org/pdf/1801.04381.pdf
-    """
-    def __init__(
-            self,
-            input_channels: int = 3,
-            output_channels: int = 1,
-            kernel_size: int = 3,
-            dilation: int = 1,
-            activation: Optional[DictConfig] = None
-            ):
-        super().__init__()
-        # Instantiate 1x1 conv to increase/decrease channel depth if necessary
-        if input_channels == output_channels:
-            self.skip_module = lambda x: 0  # Zero-function required in forward pass
-        else:
-            self.skip_module = HEALPixLayer(
-                layer='torch.nn.Conv2d',
-                in_channels=input_channels,
-                out_channels=output_channels,
-                kernel_size=1
-                )
-        # Convolution block
-        convblock = []
-        # Map channels to output depth
-        convblock.append(HEALPixLayer(
-            layer='torch.nn.Conv2d',
-            in_channels=input_channels,
-            out_channels=output_channels,
-            kernel_size=1
-            ))
-        if activation is not None: convblock.append(instantiate(activation))
-        # Depthwise convolution
-        convblock.append(HEALPixLayer(
-            layer='torch.nn.Conv2d',
-            in_channels=output_channels,
-            out_channels=output_channels,
-            kernel_size=kernel_size,
-            dilation=dilation,
-            groups=output_channels
-            ))
-        if activation is not None: convblock.append(instantiate(activation))
-        # Linear postprocessing
-        convblock.append(HEALPixLayer(
-            layer='torch.nn.Conv2d',
-            in_channels=output_channels,
-            out_channels=output_channels,
-            kernel_size=1
-            ))
-        self.convblock = torch.nn.Sequential(*convblock)
-
-    def forward(self, x):
-        return self.skip_module(x) + self.convblock(x)
 
 
 class UpSampler(torch.nn.Module):
@@ -727,7 +613,7 @@ class UpSampler(torch.nn.Module):
             kernel_size: int = 3,
             dilation: int = 1,  # Not considered!
             activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
         upsampler = []
         if upsampling_type == 'interpolate':
@@ -746,7 +632,6 @@ class UpSampler(torch.nn.Module):
                 mode='nearest'
                 ))
         else:
-            # TODO: add "skip" connection like in DownPooler?
             # Upsample transpose conv
             upsampler.append(HEALPixLayer(
                 layer='torch.nn.ConvTranspose2d',
@@ -767,46 +652,17 @@ class UpSampler(torch.nn.Module):
 class DownPooler(torch.nn.Module):
     def __init__(
             self,
-            input_channels: int = 1,
-            output_channels: int = 1,
             pooling_type: str = 'torch.nn.MaxPool2d',
             pooling: int = 2,
-            activation: Optional[DictConfig] = None
-            ):
+    ):
         super().__init__()
-        assert pooling_type in ['torch.nn.MaxPool2d', 'learned']
-        self.pooling_type = pooling_type
-
-        if pooling_type == 'torch.nn.MaxPool2d':
-            # "Skip" connection (zero-function required in forward pass)
-            self.skip_pool = lambda x: 0
-            # Maxpooling
-            self.downpooler = HEALPixLayer(
-                layer=pooling_type,
-                kernel_size=pooling
-                )
-        elif pooling_type == 'learned':
-            # "Skip" connection
-            self.skip_pool = HEALPixLayer(
-                layer='torch.nn.MaxPool2d',
-                kernel_size=pooling
-                )
-            # Donwpooling convolution
-            downpooler = []
-            downpooler.append(HEALPixLayer(
-                layer='torch.nn.Conv2d',
-                in_channels=input_channels,
-                out_channels=output_channels,
-                kernel_size=pooling,
-                stride=pooling,
-                padding=0
-                ))
-            if activation is not None:
-                downpooler.append(instantiate(activation))
-            self.downpooler = torch.nn.Sequential(*downpooler)
+        self.downpooler = HEALPixLayer(
+            layer=pooling_type,
+            kernel_size=pooling
+            )
 
     def forward(self, x):
-        return self.skip_pool(x) + self.downpooler(x)
+        return self.downpooler(x)
 
 
 if __name__ == "__main__":
