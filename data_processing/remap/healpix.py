@@ -49,7 +49,7 @@ class HEALPixRemap(_BaseRemap):
             latitudes: int,
             longitudes: int,
             nside: int,
-            order: str = "bilinear",
+            order: str = "biquadratic",
             resolution_factor: float = 1.0,
             verbose: bool = True
             ):
@@ -207,16 +207,10 @@ class HEALPixRemap(_BaseRemap):
             chunksizes["sample"] = 1
             chunksizes["varlev"] = 1
 
-        # Map the latitude and longitude fields to HEALPix
-        data_lat = ds_ll["lat"].values  # 1D [H]
-        data_lon = ds_ll["lon"].values  # 1D [W]
-        data_lat = np.repeat(a=np.expand_dims(data_lat, axis=1), repeats=self.longitudes, axis=1)  # 2D [H, W]
-        data_lon = np.repeat(a=np.expand_dims(data_lon, axis=0), repeats=self.latitudes, axis=0)   # 2D [H, W]
-        data_lat = self.ll2hpx(data_lat)  # 3D [F, H, W] (HEALPix)
-        data_lon = self.ll2hpx(data_lon)  # 3D [F, H, W] (HEALPix)
-
-        data_lat = np.array(data_lat, dtype=np.float64)
-        data_lon = np.array(data_lon, dtype=np.float64)
+        # Determine latitude and longitude values for the HEALPix faces
+        hpxlon, hpxlat = hp.pix2ang(self.nside, range(self.npix), nest=True, lonlat=True)
+        data_lat = self.hpx1d2hpx3d(hpx1d=hpxlat, dtype=np.float64)
+        data_lon = self.hpx1d2hpx3d(hpx1d=hpxlon, dtype=np.float64)
 
         # Build HEALPix dataset and write it to file
         ds_hpx = xr.Dataset(
@@ -235,7 +229,6 @@ class HEALPixRemap(_BaseRemap):
         if to_netcdf:
             if self.verbose: print("Dataset sucessfully built. Writing data to file...")
             ds_hpx.to_netcdf(prefix + target_variable_name + ".nc")
-        #print(ds_hpx.chunk())
         #ds_hpx.to_zarr(prefix + target_variable_name + ".zarr", mode="w")
         return ds_hpx
 
@@ -247,11 +240,12 @@ class HEALPixRemap(_BaseRemap):
             model_name: str = "model-name",
             vname: str = "z500",
             poolsize: int = 20,
+            chunk_ds: bool = False,
             to_netcdf: bool = True,
             times: xr.DataArray = None,
             ) -> xr.Dataset:
         """
-        Takes a (forecast) HEALPix dataset of shape [time, step, face, height, width] and converts it into the LatLon
+        Takes a forecast HEALPix dataset of shape [time, step, face, height, width] and converts it into the LatLon
         convention with shape [time, step, lat, lon], writes it to file and returns it.
 
         :param forecast_path: The path to the forecast dataset in HPX geometry
@@ -260,6 +254,7 @@ class HEALPixRemap(_BaseRemap):
         :param model_name: The name of the model (to construct the target file name)
         :param vname: The variable of interest's name
         :param poolsize: Number of processes to be used for the parallel remapping
+        :param chunk_ds: Whether to chunk the dataset (recommended for data used for model training for loading speed)
         :param to_netcdf: Whether to write the LL dataset to file
         :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
         :return: The converted dataset in LatLon convention
@@ -303,8 +298,8 @@ class HEALPixRemap(_BaseRemap):
                 pool.terminate()
                 pool.join()
             fc_data_ll = np.reshape(fc_data_ll, dims)  # [(f s) lat lon] -> [f s lat lon]
-        
-        # Convert latitudes and longitudes from HEALPix to LatLon
+
+        # Retrieve latitudes and longitudes from ground truth dataset
         gt_ds = xr.open_dataset(verification_path)
         lat, lon = gt_ds["latitude"], gt_ds["longitude"]
 
@@ -314,9 +309,12 @@ class HEALPixRemap(_BaseRemap):
                   "lat": np.array(lat, dtype=np.int64),
                   "lon": np.array(lon, dtype=np.int64)}
         
-        # Build LatLon forecast dataset
+        # Build dataset representing the forecast in LatLon format
         fc_ds_ll = xr.Dataset(coords=coords,
                               data_vars={vname: (list(coords.keys()), fc_data_ll)})
+        if chunk_ds:
+            chunksizes = {coord: len(coords[coord]) for coord in coords}
+            fc_ds_ll = to_chunked_dataset(ds=fd_ds_ll, chunking=chunksizes)
         if to_netcdf: fc_ds_ll.to_netcdf(f"{prefix}LL_{model_name.lower().replace(' ', '_')}_{vname}")
 
         return fc_ds_ll
@@ -343,13 +341,7 @@ class HEALPixRemap(_BaseRemap):
             )
 
         # Convert the 1D HEALPix array into an array of shape [faces=12, nside, nside]
-        hpx3d = np.zeros(shape=(12, self.nside, self.nside), dtype=np.float32)
-        for hpxidx in range(self.npix):
-            f, y, x = self.hpxidx2fyx(hpxidx=hpxidx)
-            hpx3d[f, x, y] = hpx1d[hpxidx]
-
-        # Compensate array indices [0, 0] representing top left and not bottom right corner (caused by hpxidx2fyx)
-        hpx3d = np.flip(hpx3d, axis=(1,2))
+        hpx3d = self.hpx1d2hpx3d(hpx1d=hpx1d)
         
         # Face index reordering/correction. Somewhat arbitrary; no clue why this is necessary
         #hpx3d = hpx3d[[1, 0, 3, 2, 6, 5, 4, 7, 9, 8, 11, 10]]
@@ -378,12 +370,7 @@ class HEALPixRemap(_BaseRemap):
         data = data[[8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]]
 
         # Convert the 3D [face, nside, nside] array back into the 1D HEALPix array
-        hpx1d = np.zeros(self.npix, dtype=np.float32)
-        for f in range(12):
-            for y in range(self.nside):
-                for x in range(self.nside):
-                    hpxidx = self.fyx2hpxidx(f=f, y=y, x=x)
-                    hpx1d[hpxidx] = data[f, y, x]
+        hpx1d = self.hpx3d2hpx1d(hpx3d=data)
 
         # Project 1D HEALPix to LatLon
         ll2d, ll2d_mask = rp.reproject_from_healpix(
@@ -404,7 +391,40 @@ class HEALPixRemap(_BaseRemap):
                                  "HEALPix data is smaller than that of the target latlon grid.")
         return ll2d
 
-    def hpxidx2fyx(self, hpxidx: int) -> (int, int, int):
+    def hpx1d2hpx3d(self, hpx1d: np.array, dtype: np.dtype = np.float32) -> np.array:
+        """
+        Converts a one-dimensional HEALPix array [NPix] into a three-dimensional HEALPix array of shape [F, H, W].
+
+        :param hpx1d: The one-dimensional array in HEALPix convention
+        :param dtype: The data type (float precision) of the returned array
+        :return: The three-dimensional array in [F, H, W] convention
+        """
+        # Convert the 1D HEALPix array into an array of shape [faces=12, nside, nside]
+        hpx3d = np.zeros(shape=(12, self.nside, self.nside), dtype=dtype)
+        for hpxidx in range(self.npix):
+            f, y, x = self.hpxidx2fyx(hpxidx=hpxidx)
+            hpx3d[f, x, y] = hpx1d[hpxidx]
+
+        # Compensate array indices [0, 0] representing top left and not bottom right corner (caused by hpxidx2fyx)
+        return np.flip(hpx3d, axis=(1,2))
+
+    def hpx3d2hpx1d(self, hpx3d: np.array, dtype: np.dtype = np.float32) -> np.array:
+        """
+        Converts a three-dimensional HEALPix array of shape [F, H, W] into a one-dimensional HEALPix array [NPix].
+
+        :param hpx3d: The three dimensional array in HEALPix convention [F, H, W]
+        :param dtype: The data type (float precision) of the returned array
+        :return: The one-dimensional array in [NPix] HEALPix convention
+        """
+        hpx1d = np.zeros(self.npix, dtype=dtype)
+        for f in range(12):
+            for y in range(self.nside):
+                for x in range(self.nside):
+                    hpxidx = self.fyx2hpxidx(f=f, y=y, x=x)
+                    hpx1d[hpxidx] = hpx3d[f, y, x]
+        return hpx1d
+
+    def hpxidx2fyx(self, hpxidx: int, dtype: np.dtype = np.float32) -> (int, int, int):
         """
         Determines the face (f), column (x), and row (y) indices for a given HEALPix index under consideration of the base
         face index [0, 1, ..., 11] and the number of pixels each HEALPix face side has (nside).
