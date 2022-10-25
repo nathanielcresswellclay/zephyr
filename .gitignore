@@ -112,6 +112,5 @@ assets/
 .idea
 .idea/
 
-# Slurm
-sbatch.sh
-nohup*
+# Output directories
+*/outputs

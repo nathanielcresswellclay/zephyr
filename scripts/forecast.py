@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm
 import xarray as xr
 
-from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
+from training.dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
 
 logger = logging.getLogger(__name__)
 logging.getLogger('cfgrib').setLevel(logging.ERROR)
@@ -141,10 +141,21 @@ def inference(args: argparse.Namespace):
     prediction_ds = to_chunked_dataset(prediction_ds, {'time': 1})
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
+<<<<<<< HEAD
 
     output_file = os.path.join(args.output_directory,
                                f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
     logger.info("exporting data to %s", output_file)
+=======
+    
+    if args.output_filename is None:
+        output_file = os.path.join(args.output_directory,
+                                   f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
+    else:
+        output_file = os.path.join(args.output_directory,
+                                   args.output_filename+f".{'zarr' if args.to_zarr else 'nc'}")
+    logger.info(f"exporting data to {output_file}")
+>>>>>>> 02832e8c0755cb39b9696f48a255171a5bb1649c
     if args.to_zarr:
         prediction_ds.to_zarr(output_file)
     else:
@@ -187,6 +198,8 @@ if __name__ == '__main__':
                         help="Suffix for test data files")
     parser.add_argument('--gpu', type=int, default=0,
                         help="Index of GPU device on which to run model")
+    parser.add_argument('--output-filename',type=str, default=None,
+                        help="output forecast filename")
 
     configure_logging(2)
     run_args = parser.parse_args()

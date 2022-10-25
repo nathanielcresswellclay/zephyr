@@ -10,7 +10,7 @@ logging.getLogger('cfgrib').setLevel(logging.ERROR)
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
 
-@hydra.main(config_path='../configs', config_name='config')
+@hydra.main(config_path='../training/configs', config_name='config')
 def train(cfg):
     logger.info("experiment working directory: %s", os.getcwd())
 

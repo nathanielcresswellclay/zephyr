@@ -1,3 +1,0 @@
-progress_bar:
-  _target_: dlwp.utils.CustomProgressBar
-  refresh_rate: 1

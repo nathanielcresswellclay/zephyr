@@ -1,0 +1,41 @@
+analyses:
+  - ssim
+  #- acc
+  #- rmse
+  #- rmse_per_face
+  #- image_series_native
+
+evaluate_variables_in_parallel: True
+variables:
+  - t2m0
+  - z500
+
+evaluation_directory: evaluation/outputs/cs64_hpx32
+
+forecasts:
+  src_path: /home/disk/brume/karlbam
+  
+  models:
+    HPX64 c360 plateau 300 epochs:
+      forecast_path: DELUSioN/evaluation/forecasts/forecast_06-02-02_hpx64_u3p_c360_lr2e-4_plat_ep300_vNone.nc
+      forecast_overrides:
+        - transfer_das=False
+        - paths.verification=/home/rhodium/dlwp/data/HPX64/era5_1deg_3h_HPX64_1979-2018_
+        - evaluator/remap_config=hpx64
+
+    HPX64 c360 cosine 100 epochs:
+      forecast_path: DELUSioN/evaluation/forecasts/forecast_06-02-02_hpx64_u3p_c360-180-90_ep100_vNone.nc
+      forecast_overrides:
+        - transfer_das=True
+        - verbose=False
+        - paths.verification=/home/rhodium/dlwp/data/HPX64/era5_1deg_3h_HPX64_1979-2018_
+        - evaluator/remap_config=hpx64
+
+    #CS64 gelu:
+    #  forecast_path: DELUSioN/evaluation/forecasts/forecast_06-02-02_unet_gelu_ep300_vNone.nc
+    #  forecast_overrides:
+    #    - verbose=False
+    #    - rescale_das=True
+    #    - evaluator=cs
+    #    - analysis.on_latlon=False
+    #    - paths.verification=/home/disk/brume/karlbam/Data/DLWP/CS64/era5_1deg_3h_CS64S_1979-2018_
