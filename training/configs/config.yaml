@@ -22,3 +22,5 @@ num_workers: 8
 
 hydra:
   verbose: true
+  run:
+    dir: training/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

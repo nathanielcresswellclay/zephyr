@@ -49,7 +49,10 @@ class HEALPixLayer(th.nn.Module):
 
         # Define a HEALPixPadding layer if the given layer is a convolution layer
         try:
-            if layer.__bases__[0] is th.nn.modules.conv._ConvNd and kwargs["kernel_size"] > 1:
+            if (layer.__bases__[0] is th.nn.modules.conv._ConvNd
+                and kwargs["kernel_size"] > 1
+                and not ("padding" in kwargs.keys() and kwargs["padding"] == 0)  # No padding if explicitly set to zero
+                ):
                 kwargs["padding"] = 0  # Disable native padding
                 kernel_size = 3 if "kernel_size" not in kwargs else kwargs["kernel_size"]
                 dilation = 1 if "dilation" not in kwargs else kwargs["dilation"]
@@ -95,6 +98,9 @@ class HEALPixPadding(th.nn.Module):
         """
         super().__init__()
         self.p = padding
+        self.d = [-2, -1]
+        self.ret_tl = th.zeros(1, 1, 1)
+        self.ret_br = th.zeros(1, 1, 1)
         if not isinstance(padding, int) or padding < 1:
             raise ValueError(f"invalid value for 'padding', expected int > 0 but got {padding}")
 
@@ -105,6 +111,7 @@ class HEALPixPadding(th.nn.Module):
         :param data: The input tensor of shape [..., F, H, W] where each face is to be padded in its HPX context
         :return: The padded tensor where each face's height and width are increased by 2*p
         """
+
         # Extract the twelve faces (as views of the original tensors)
         f00, f01, f02, f03, f04, f05, f06, f07, f08, f09, f10, f11 = th.split(tensor=data, split_size_or_sections=1,
                                                                               dim=-3)
@@ -114,7 +121,7 @@ class HEALPixPadding(th.nn.Module):
         p01 = self.pn(c=f01, t=f02, tl=f03, l=f00, bl=f00, b=f05, br=f09, r=f06, tr=f02)
         p02 = self.pn(c=f02, t=f03, tl=f00, l=f01, bl=f01, b=f06, br=f10, r=f07, tr=f03)
         p03 = self.pn(c=f03, t=f00, tl=f01, l=f02, bl=f02, b=f07, br=f11, r=f04, tr=f00)
-
+        
         # Assemble the four padded faces on the equator
         p04 = self.pe(c=f04, t=f00, tl=self.tl(f00, f03), l=f03, bl=f07, b=f11, br=self.br(f11, f08), r=f08, tr=f05)
         p05 = self.pe(c=f05, t=f01, tl=self.tl(f01, f00), l=f00, bl=f04, b=f08, br=self.br(f08, f09), r=f09, tr=f06)
@@ -126,7 +133,7 @@ class HEALPixPadding(th.nn.Module):
         p09 = self.ps(c=f09, t=f06, tl=f01, l=f05, bl=f08, b=f08, br=f11, r=f10, tr=f10)
         p10 = self.ps(c=f10, t=f07, tl=f02, l=f06, bl=f09, b=f09, br=f08, r=f11, tr=f11)
         p11 = self.ps(c=f11, t=f04, tl=f03, l=f07, bl=f10, b=f10, br=f09, r=f08, tr=f08)
-
+                
         return th.cat((p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10, p11), dim=-3)
 
     def pn(self, c: th.Tensor, t: th.Tensor, tl: th.Tensor, l: th.Tensor, bl: th.Tensor, b: th.Tensor, br: th.Tensor,
@@ -145,8 +152,8 @@ class HEALPixPadding(th.nn.Module):
         :param tr: The top right neighboring face  tensor
         :return: The padded tensor p
         """
-        p = self.p    # Padding size
-        d = [-2, -1]  # Dimensions for rotations
+        p = self.p  # Padding size
+        d = self.d  # Dimensions for rotations
 
         # Start with top and bottom to extend the height of the c tensor
         c = th.cat((t.rot90(1, d)[..., -p:, :], c, b[..., :p, :]), dim=-2)
@@ -173,22 +180,15 @@ class HEALPixPadding(th.nn.Module):
         :param tr: The top right neighboring face  tensor
         :return: The padded tensor p
         """
-        p = self.p    # Padding size
-        d = [-2, -1]  # Dimensions for rotations
+        p = self.p  # Padding size
+        d = self.d  # Dimensions for rotations
 
         # Start with top and bottom to extend the height of the c tensor
         c = th.cat((t[..., -p:, :], c, b[..., :p, :]), dim=-2)
 
-        #plt.imshow(c[0, 0, 0].numpy())
-        #plt.show()
-
         # Construct the left and right pads including the corner faces
         left = th.cat((tl[..., -p:, -p:], l[..., -p:], bl[..., :p, -p:]), dim=-2)
         right = th.cat((tr[..., -p:, :p], r[..., :p], br[..., :p, :p]), dim=-2)
-
-        #c = th.cat((left, c, right), dim=-1)
-        #plt.imshow(c[0, 0, 0].numpy())
-        #plt.show()
 
         return th.cat((left, c, right), dim=-1)
 
@@ -208,8 +208,8 @@ class HEALPixPadding(th.nn.Module):
         :param tr: The top right neighboring face  tensor
         :return: The padded tensor p
         """
-        p = self.p    # Padding size
-        d = [-2, -1]  # Dimensions for rotations
+        p = self.p  # Padding size
+        d = self.d  # Dimensions for rotations
 
         # Start with top and bottom to extend the height of the c tensor
         c = th.cat((t[..., -p:, :], c, b.rot90(1, d)[..., :p, :]), dim=-2)
@@ -218,10 +218,6 @@ class HEALPixPadding(th.nn.Module):
         left = th.cat((tl[..., -p:, -p:], l[..., -p:], bl[..., :p, -p:]), dim=-2)
         right = th.cat((tr[..., -p:, :p], r.rot90(-1, d)[..., :p], br.rot90(2, d)[..., :p, :p]), dim=-2)
         
-        #c = th.cat((left, c, right), dim=-1)
-        #plt.imshow(c[0, 0, 0].numpy())
-        #plt.show()
-
         return th.cat((left, c, right), dim=-1)
         
     def tl(self, t: th.Tensor, l: th.Tensor) -> th.Tensor:
@@ -233,7 +229,8 @@ class HEALPixPadding(th.nn.Module):
         :param l: The face left of the center face
         :return: The assembled top left corner (only the sub-part that is required for padding)
         """
-        ret = th.zeros((*t.shape[:-2], self.p, self.p)).type_as(t)
+        #ret = th.zeros((*t.shape[:-2], self.p, self.p)).type_as(t)  # prohibitively slow on multi GPU
+        ret = th.zeros_like(t)[..., :self.p, :self.p]  # super ugly but super fast
 
         # Bottom left point
         ret[..., -1, -1] = 0.5*t[..., -1, 0] + 0.5*l[..., 0, -1]
@@ -244,11 +241,6 @@ class HEALPixPadding(th.nn.Module):
             ret[..., -i:, -i-1] = l[..., :i, -i-1]  # Filling bottom left below main diagonal
             ret[..., -i-1, -i-1] = 0.5*t[..., -i-1, 0] + 0.5*l[..., 0, -i-1]  # Diagonal
         
-        #fig, axs = plt.subplots(1, 2)
-        #axs[0].imshow(th.cat((l.rot90(-1, [-2, -1]), t), axis=-1)[0, 0, 0].numpy())
-        #axs[1].imshow(ret[0, 0, 0].numpy())
-        #plt.show()
-
         return ret
 
     def br(self, b: th.Tensor, r: th.Tensor) -> th.Tensor:
@@ -260,7 +252,8 @@ class HEALPixPadding(th.nn.Module):
         :param r: The face right of the center face
         :return: The assembled bottom right corner (only the sub-part that is required for padding)
         """
-        ret = th.zeros((*b.shape[:-2], self.p, self.p)).type_as(b)
+        #ret = th.zeros((*b.shape[:-2], self.p, self.p)).type_as(b)  # prohibitively slow on multi GPU
+        ret = th.zeros_like(b)[..., :self.p, :self.p]
 
         # Top left point
         ret[..., 0, 0] = 0.5*b[..., 0, -1] + 0.5*r[..., -1, 0]
@@ -268,13 +261,8 @@ class HEALPixPadding(th.nn.Module):
         # Remaining points
         for i in range(1, self.p):
             ret[..., :i, i] = r[..., -i:, i]  # Filling top right above main diagonal
-            ret[..., i, :i] = b[..., i, -i:]        # Filling bottom left below main diagonal
+            ret[..., i, :i] = b[..., i, -i:]  # Filling bottom left below main diagonal
             ret[..., i, i] = 0.5*b[..., i, -1] + 0.5*r[..., -1, i]  # Diagonal
-
-        #fig, axs = plt.subplots(1, 2)
-        #axs[0].imshow(th.cat((b, r.rot90(-1, [-2, -1])), axis=-1)[0, 0, 0].numpy())
-        #axs[1].imshow(ret[0, 0, 0].numpy())
-        #plt.show()
 
         return ret
 
