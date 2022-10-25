@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm
 import xarray as xr
 
-from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging
+from training.dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging
 
 logger = logging.getLogger(__name__)
 logging.getLogger('cfgrib').setLevel(logging.ERROR)
