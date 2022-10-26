@@ -6,10 +6,10 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
 
-from dlwp.model.models.base import BaseModel
-from dlwp.model.layers.healpix import HEALPixPadding, HEALPixLayer
-from dlwp.model.losses import LossOnStep
-from dlwp.model.layers.utils import Interpolate
+from training.dlwp.model.models.base import BaseModel
+from training.dlwp.model.layers.healpix import HEALPixPadding, HEALPixLayer
+from training.dlwp.model.losses import LossOnStep
+from training.dlwp.model.layers.utils import Interpolate
 
 logger = logging.getLogger(__name__)
 

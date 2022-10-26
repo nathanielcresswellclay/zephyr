@@ -1,4 +1,4 @@
-_target_: dlwp.model.models.hpx_unet.Unet3plusDecoder
+_target_: training.dlwp.model.models.hpx_unet.Unet3plusDecoder
 _recursive_: false
 n_channels:
   - 256
@@ -13,5 +13,5 @@ dilations:
 upsampling_type: interpolate
 upsampling: 2
 activation:
-  _target_: dlwp.model.layers.activations.CappedGELU
+  _target_: training.dlwp.model.layers.activations.CappedGELU
   cap_value: 10.
