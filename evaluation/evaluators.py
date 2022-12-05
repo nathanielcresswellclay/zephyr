@@ -130,6 +130,13 @@ class EvaluatorBase(object):
             "vname_era5": "v10m",
             "vname_long": "V-component of wind 10m",
             "cmap": "Oranges"
+            },
+        "ttr1h": {
+            "unit": r"$J m^{-2}$",
+            "fname_era5": "ttr1h",
+            "vname_era5": "ttr1h",
+            "vname_long": "top net thermal radiation",
+            "cmap": "greys_r"
             }
         }
     
@@ -326,6 +333,7 @@ class EvaluatorBase(object):
         :param mean: Whether to return a single value or an array of length forecast steps
         """
         if self.on_latlon:
+            print('computing MSE on lat lon...')
             # Calculate the weights to apply to the (latitude-weighted) MSE
             weights = np.cos(np.deg2rad(self.verification_da.lat.values))
             weights /= weights.mean()        
@@ -337,6 +345,7 @@ class EvaluatorBase(object):
             verif = self.verification_da.transpose("time", "step", "lat", "lon")
             axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
         else:
+            print('computing MSE on native...')
             weights = None  # No latitude weighting on the native mesh
             # Enforce aligning dimensions
             forec = self.forecast_da.transpose("time", "step", "face", "height", "width")
