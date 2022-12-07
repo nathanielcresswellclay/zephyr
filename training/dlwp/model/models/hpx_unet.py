@@ -8,7 +8,7 @@ import torch
 
 from training.dlwp.model.models.base import BaseModel
 from training.dlwp.model.layers.healpix import HEALPixPadding, HEALPixLayer
-from training.dlwp.model.losses import LossOnStep
+from training.dlwp.model.losses import LossOnStep, SSIM
 from training.dlwp.model.layers.utils import Interpolate
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,8 @@ class HEALPixUnetSSIM(HEALPixUnet, ABC):
             input_time_dim: int,
             output_time_dim: int,
             nside: int = 32,
-            batch_size: Optional[int] = None
+            batch_size: Optional[int] = None,
+            weights=[.5,.5]
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
@@ -181,6 +182,8 @@ class HEALPixUnetSSIM(HEALPixUnet, ABC):
             batch_size=batch_size,
             )
  
+        self.output_variables = ['z500','tau300-700','z1000','t2m0','tcwv0','t850','z250','ttr1h']
+        self.mse_dsim_weights = weights 
     
     # Override training step 
     def training_step(
@@ -190,8 +193,21 @@ class HEALPixUnetSSIM(HEALPixUnet, ABC):
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
-        loss = self.loss(outputs, targets)
-        self.log('loss', loss, batch_size=self.batch_size)
+        # initialize tensor to store loses for each variables 
+        loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{outputs.get_device()}')
+        ssim = SSIM(time_series_forecasting=True)
+        for i in range(outputs.shape[2]):
+            loss_v = self.loss(outputs[:,:,i:i+1,:,:,:], targets[:,:,i:i+1,:,:,:])
+            dsim = torch.min(torch.tensor([1.,float(loss_v)]))*(1-ssim.forward(outputs[:,:,i:i+1,:,:,:], targets[:,:,i:i+1,:,:,:]))
+            if self.output_variables[i] in ['tcwv0', 'ttr1h']:
+                weights = torch.tensor(self.mse_dsim_weights,device=f'cuda:{loss_v.get_device()}')
+                loss_by_var[i] = torch.sum( weights * torch.stack([loss_v,dsim]) )
+            else: 
+                loss_by_var[i] = loss_v 
+            self.log(f'Losses_train/{self.output_variables[i]}', loss_v, batch_size=self.batch_size)
+            self.log(f'DSIMs_train/{self.output_variables[i]}', dsim, batch_size=self.batch_size)
+        loss = loss_by_var.mean()
+        self.log(f'Losses_train/all_vars', loss, batch_size=self.batch_size)
         return loss
 
     # Override validation step 
