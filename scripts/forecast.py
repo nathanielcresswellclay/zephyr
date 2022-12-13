@@ -158,7 +158,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Produce forecasts from a DLWP model.')
     parser.add_argument('-m', '--model-path', type=str, required=True,
                         help="Path to model training outputs directory")
-    parser.add_argument('-c', '--model-checkpoint', type=str, default='last.ckpt',
+    parser.add_argument('-c', '--model-checkpoint', type=str, default=None,
                         help="Model checkpoint file name")
     parser.add_argument('--model-version', default=None, type=int,
                         help="Model version. Defaults to using the latest available version unless a specific integer "
