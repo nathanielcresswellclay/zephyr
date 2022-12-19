@@ -182,7 +182,7 @@ class HEALPixUnetSSIM(HEALPixUnet, ABC):
             batch_size=batch_size,
             )
  
-        self.output_variables = ['z500','tau300-700','z1000','t2m0','tcwv0','t850','z250','ttr1h']
+        self.output_variables = ['z500','tau300-700','z1000','t2m0','tcwv0','t850','z250','ttr']
         self.mse_dsim_weights = weights 
     
     # Override training step 
@@ -199,15 +199,16 @@ class HEALPixUnetSSIM(HEALPixUnet, ABC):
         for i in range(outputs.shape[2]):
             loss_v = self.loss(outputs[:,:,i:i+1,:,:,:], targets[:,:,i:i+1,:,:,:])
             dsim = torch.min(torch.tensor([1.,float(loss_v)]))*(1-ssim.forward(outputs[:,:,i:i+1,:,:,:], targets[:,:,i:i+1,:,:,:]))
-            if self.output_variables[i] in ['tcwv0', 'ttr1h']:
+            if self.output_variables[i] in ['tcwv0', 'ttr']:
                 weights = torch.tensor(self.mse_dsim_weights,device=f'cuda:{loss_v.get_device()}')
                 loss_by_var[i] = torch.sum( weights * torch.stack([loss_v,dsim]) )
             else: 
                 loss_by_var[i] = loss_v 
-            self.log(f'Losses_train/{self.output_variables[i]}', loss_v, batch_size=self.batch_size)
+            self.log(f'MSEs_train/{self.output_variables[i]}', loss_v, batch_size=self.batch_size)
             self.log(f'DSIMs_train/{self.output_variables[i]}', dsim, batch_size=self.batch_size)
+            self.log(f'losses_train/{self.output_variables[i]}', loss_by_var[i], batch_size=self.batch_size)
         loss = loss_by_var.mean()
-        self.log(f'Losses_train/all_vars', loss, batch_size=self.batch_size)
+        self.log(f'losses_train/all_vars', loss, batch_size=self.batch_size)
         return loss
 
     # Override validation step 
