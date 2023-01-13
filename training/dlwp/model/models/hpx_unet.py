@@ -127,6 +127,95 @@ class HEALPixUnet(BaseModel, ABC):
     def forward(self, inputs: Sequence, output_only_last=False) -> torch.Tensor:
         return self.generator(inputs, output_only_last)
 
+class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
+    def __init__(
+            self,
+            encoder: DictConfig,
+            decoder: DictConfig,
+            optimizer: DictConfig,
+            scheduler: Optional[DictConfig],
+            loss: DictConfig,
+            input_channels: int,
+            output_channels: int,
+            n_constants: int,
+            decoder_input_channels: int,
+            input_time_dim: int,
+            output_time_dim: int,
+            nside: int = 32,
+            batch_size: Optional[int] = None,
+            weights=[.5,.5]
+    ):
+        """
+        Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
+        HEALPix grid.
+
+        :param encoder: dictionary of instantiable parameters for the U-net encoder (see UnetEncoder docs)
+        :param decoder: dictionary of instantiable parameters for the U-net decoder (see UnetDecoder docs)
+        :param optimizer: dictionary of instantiable parameters for the model optimizer
+        :param scheduler: dictionary of instantiable parameters for optimizer scheduler
+        :param loss: dictionary of instantiable parameters for the model loss function
+        :param input_channels: number of input channels expected in the input array schema. Note this should be the
+            number of input variables in the data, NOT including data reshaping for the encoder part.
+        :param output_channels: number of output channels expected in the output array schema, or output variables
+        :param n_constants: number of optional constants expected in the input arrays. If this is zero, no constants
+            should be provided as inputs to `forward`.
+        :param decoder_input_channels: number of optional prescribed variables expected in the decoder input array
+            for both inputs and outputs. If this is zero, no decoder inputs should be provided as inputs to `forward`.
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param nside: number of points on the side of a HEALPix face
+        :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
+        """
+        super().__init__(
+            encoder=encoder,
+            decoder=decoder,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss=loss,
+            input_channels=input_channels,
+            output_channels=output_channels,
+            n_constants=n_constants,
+            decoder_input_channels=decoder_input_channels,
+            input_time_dim=input_time_dim,
+            output_time_dim=output_time_dim,
+            nside=nside,
+            batch_size=batch_size,
+            )
+ 
+        self.output_variables = ['z500','tau300-700','z1000','t2m0','tcwv0','t850','z250','ttr']
+        self.mse_dsim_weights = weights 
+    
+    def training_step(
+            self,
+            batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
+            batch_idx: int  # pylint: disable=unused-argument
+    ) -> torch.Tensor:
+        inputs, targets = batch
+        outputs = self(inputs)
+        loss_by_var = self.loss(outputs, targets, self)
+        # log losses by feature 
+        for i in range(len(self.output_variables)):
+            self.log(f'loss_train/{self.output_variables[i]}', loss_by_var[i], batch_size=self.batch_size)
+        loss = loss_by_var.mean()
+        self.log(f'losses_train/all_vars', loss, batch_size=self.batch_size)
+        self.log('loss', loss, batch_size=self.batch_size)
+        return loss
+
+    # Override training step 
+    def validation_step(
+            self,
+            batch: Tuple[Union[Sequence, torch.Tensor], torch.Tensor],
+            batch_idx: int  # pylint: disable=unused-argument
+    ) -> torch.Tensor:
+        inputs, targets = batch
+        outputs = self(inputs)
+        loss = self.loss(outputs, targets, self)
+        self.log('loss', loss, sync_dist=True, batch_size=self.batch_size)
+
+        for m, metric in self.metrics.items():
+            self.log(f'val_{m}', metric(outputs, targets), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
+
+
 class HEALPixUnetSSIM(HEALPixUnet, ABC):
     def __init__(
             self,
