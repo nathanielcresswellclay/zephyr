@@ -1,0 +1,6 @@
+_target_: training.dlwp.model.losses.MSE_SSIM
+
+mse_params:
+ssim_params:
+  window_size: 11
+  time_series_forecasting: True

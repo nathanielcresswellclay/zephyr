@@ -143,7 +143,9 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
             output_time_dim: int,
             nside: int = 32,
             batch_size: Optional[int] = None,
-            weights=[.5,.5]
+            weights=[.5,.5],
+            output_variables = None,
+            ssim_variables = None
     ):
         """
         Pytorch-lightning module implementation of the Deep Learning Weather Prediction (DLWP) U-net3 model on the
@@ -165,7 +167,10 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
         :param output_time_dim: number of time steps in the output array
         :param nside: number of points on the side of a HEALPix face
         :param batch_size: batch size. Provided only to correctly compute validation losses in metrics.
+        :param input_variables: list of input variables 
+        :param ssim_variables: variables to use ssim to compute the loss over 
         """
+
         super().__init__(
             encoder=encoder,
             decoder=decoder,
@@ -182,7 +187,8 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
             batch_size=batch_size,
             )
  
-        self.output_variables = ['z500','tau300-700','z1000','t2m0','tcwv0','t850','z250','ttr']
+        self.output_variables = output_variables
+        self.ssim_variables = ssim_variables
         self.mse_dsim_weights = weights 
     
     def training_step(
@@ -192,12 +198,7 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
     ) -> torch.Tensor:
         inputs, targets = batch
         outputs = self(inputs)
-        loss_by_var = self.loss(outputs, targets, self)
-        # log losses by feature 
-        for i in range(len(self.output_variables)):
-            self.log(f'loss_train/{self.output_variables[i]}', loss_by_var[i], batch_size=self.batch_size)
-        loss = loss_by_var.mean()
-        self.log(f'losses_train/all_vars', loss, batch_size=self.batch_size)
+        loss = self.loss(outputs, targets, self)
         self.log('loss', loss, batch_size=self.batch_size)
         return loss
 

@@ -1,5 +1,6 @@
 import torch
 from torch.nn import functional as F
+import pytorch_lightning as pl
 
 class LossOnStep(torch.nn.Module):
     """
@@ -26,6 +27,60 @@ class GeneratorLoss(torch.nn.Module):
         else:
             return self.loss(inputs, targets)
 
+class MSE_SSIM(torch.nn.Module):
+    """
+    This class provides a compound loss formulation combining differential structural similarity (SSIM) and mean squared 
+    error (MSE). Calling this class will compute the loss using SSIM for fields indicated by model attributes 
+    (model.ssim_fields). 
+    """
+    def __init__(
+            self,
+            mse_params=None,
+            ssim_params=None
+            ):
+        """
+        Constructor method.
+
+        :param mse_params: (Optional) parameters to pass to MSE constructor  
+        :param : (Optional) dictionary of parameters to pass to SSIM constructor  
+        """
+
+        super(MSE_SSIM, self).__init__()
+        if ssim_params is None:
+            self.ssim = SSIM()  
+        else: 
+            self.ssim = SSIM(**ssim_params)
+        if mse_params is None:
+            self.mse = torch.nn.MSELoss() 
+        else: 
+            self.mse = torch.nn.MSELoss(**mse_params)
+
+    def forward(
+            self,
+            outputs: torch.tensor,
+            targets: torch.tensor,
+            model: pl.LightningModule):
+
+        
+        # check tensor shapes to ensure proper computation of loss 
+        try:
+            assert outputs.shape[-1] == outputs.shape[-2]
+            assert outputs.shape[3] == 12
+            assert outputs.shape[2] == model.output_channels
+            assert outputs.shape[1] == model.output_time_dim
+        except AssertionError: 
+            print(f'losses.MSE_SSIM: expected output shape [batchsize, {model.output_time_dim}, {model.output_channels}, [spatial dims]] got {outputs.shape}')
+            exit()
+        # calculate variable wise loss 
+        print(f'model output variables {model.output_variables}')
+        print(f'model ssim variables {model.ssim_variables}')
+        exit()
+        loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{outputs.get_device()}')
+        for v in enumerate(model.output_variables):
+#TODO write loss calc for dssim and mse variables 
+            if i,v in model.ssim_variables: 
+            else:
+            self.log(f'loss_train/{self.output_variables[i]}', loss_by_var[i], batch_size=self.batch_size)
 
 class SSIM(torch.nn.Module):
     """
