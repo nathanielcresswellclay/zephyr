@@ -12,9 +12,9 @@ output_time_dim: ${data.output_time_dim}
 nside: ${data.nside}
 batch_size: ${batch_size}
 output_variables: ${data.input_variables}
-ssim_variables: 
-  - ttr1h
-  - tcwv0
+#ssim_variables: 
+#  - ttr1h
+#  - tcwv0
 
 # Parameters automatically overridden in train code
 # input_channels

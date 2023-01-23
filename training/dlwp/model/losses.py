@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 import pytorch_lightning as pl
+import numpy as np
 
 class LossOnStep(torch.nn.Module):
     """
@@ -41,13 +42,19 @@ class MSE_SSIM(torch.nn.Module):
     def __init__(
             self,
             mse_params=None,
-            ssim_params=None
+            ssim_params=None,
+            ssim_variables = ['ttr1h', 'tcwv0'],
+            weights=[0.5,0.5],
             ):
         """
         Constructor method.
 
         :param mse_params: (Optional) parameters to pass to MSE constructor  
-        :param : (Optional) dictionary of parameters to pass to SSIM constructor  
+        :param ssim_params: (Optional) dictionary of parameters to pass to SSIM constructor  
+        :ssim variables: (Optional) list of variables over which loss will be calculated using DSSIM and MSE 
+        :param weights: (Optional) variables identified as requireing SSIM-loss calculation 
+            will have their loss calculated by a weighted average od the DSSIM metric and MSE.
+            The weights of this weighted average are identified here. [MSE_weight, DSSIM_weight]
         """
 
         super(MSE_SSIM, self).__init__()
@@ -59,6 +66,11 @@ class MSE_SSIM(torch.nn.Module):
             self.mse = torch.nn.MSELoss() 
         else: 
             self.mse = torch.nn.MSELoss(**mse_params)
+        if np.sum(weights) == 1:
+            self.mse_dssim_weights = weights 
+        else:
+            raise ValueError('Weights passed to MSE_SSIM loss must sum to 1')
+        self.ssim_variables = ssim_variables 
 
     def forward(
             self,
@@ -82,13 +94,13 @@ class MSE_SSIM(torch.nn.Module):
         # initialize losses by var tensor that will store the variable wise loss 
         loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{device}')
         # initialize weights tensor that will allow for a weighted average of MSE and SSIM 
-        weights = torch.tensor(model.mse_dssim_weights,device=f'cuda:{device}')
+        weights = torch.tensor(self.mse_dssim_weights,device=f'cuda:{device}')
         # calculate variable wise loss 
         for i,v in enumerate(model.output_variables):
             # for logging purposes calculated DSIM and MSE for each variable
             var_mse = self.mse(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]) # the slice operation here ensures the singleton dimension is not squashed
             var_dssim = torch.min(torch.tensor([1.,float(var_mse)]))*(1-self.ssim(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]))
-            if v in model.ssim_variables: 
+            if v in self.ssim_variables: 
                 # compute weighted average between mse and dssim
                 loss_by_var[i] = torch.sum( weights * torch.stack([var_mse,var_dssim]) )
             else:
