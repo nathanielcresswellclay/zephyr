@@ -11,8 +11,13 @@ class LossOnStep(torch.nn.Module):
         self.loss = loss
         self.time_slice = slice(step * time_dim, (step + 1) * time_dim)
 
-    def forward(self, inputs, targets):
-        return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice])
+    def forward(self, inputs, targets, model: torch.nn.Module = None):
+        
+        # check weather model is required for loss calculation 
+        if 'model' in self.loss.forward.__code__.co_varnames:
+            return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice], model)
+        else: 
+            return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice])
 
 
 class GeneratorLoss(torch.nn.Module):
@@ -67,20 +72,33 @@ class MSE_SSIM(torch.nn.Module):
             assert outputs.shape[-1] == outputs.shape[-2]
             assert outputs.shape[3] == 12
             assert outputs.shape[2] == model.output_channels
-            assert outputs.shape[1] == model.output_time_dim
+            assert (outputs.shape[1] == model.output_time_dim) or (outputs.shape[1] == model.output_time_dim//model.input_time_dim)
         except AssertionError: 
             print(f'losses.MSE_SSIM: expected output shape [batchsize, {model.output_time_dim}, {model.output_channels}, [spatial dims]] got {outputs.shape}')
             exit()
+
+        # store the location of output and target tensors 
+        device = outputs.get_device()
+        # initialize losses by var tensor that will store the variable wise loss 
+        loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{device}')
+        # initialize weights tensor that will allow for a weighted average of MSE and SSIM 
+        weights = torch.tensor(model.mse_dssim_weights,device=f'cuda:{device}')
         # calculate variable wise loss 
-        print(f'model output variables {model.output_variables}')
-        print(f'model ssim variables {model.ssim_variables}')
-        exit()
-        loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{outputs.get_device()}')
-        for v in enumerate(model.output_variables):
-#TODO write loss calc for dssim and mse variables 
-            if i,v in model.ssim_variables: 
+        for i,v in enumerate(model.output_variables):
+            # for logging purposes calculated DSIM and MSE for each variable
+            var_mse = self.mse(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]) # the slice operation here ensures the singleton dimension is not squashed
+            var_dssim = torch.min(torch.tensor([1.,float(var_mse)]))*(1-self.ssim(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]))
+            if v in model.ssim_variables: 
+                # compute weighted average between mse and dssim
+                loss_by_var[i] = torch.sum( weights * torch.stack([var_mse,var_dssim]) )
             else:
-            self.log(f'loss_train/{self.output_variables[i]}', loss_by_var[i], batch_size=self.batch_size)
+                loss_by_var[i] = var_mse
+            model.log(f'MSEs_train/{model.output_variables[i]}', var_mse, batch_size=model.batch_size)
+            model.log(f'DSIMs_train/{model.output_variables[i]}', var_dssim, batch_size=model.batch_size)
+            model.log(f'losses_train/{model.output_variables[i]}', loss_by_var[i], batch_size=model.batch_size)
+        loss = loss_by_var.mean()
+        model.log(f'losses_train/all_vars', loss, batch_size=model.batch_size)
+        return loss
 
 class SSIM(torch.nn.Module):
     """

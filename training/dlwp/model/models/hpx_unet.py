@@ -189,7 +189,7 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
  
         self.output_variables = output_variables
         self.ssim_variables = ssim_variables
-        self.mse_dsim_weights = weights 
+        self.mse_dssim_weights = weights 
     
     def training_step(
             self,
@@ -214,7 +214,11 @@ class HEALPixUnetCustomLoss(HEALPixUnet, ABC):
         self.log('loss', loss, sync_dist=True, batch_size=self.batch_size)
 
         for m, metric in self.metrics.items():
-            self.log(f'val_{m}', metric(outputs, targets), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
+            # check if model is required for loss calculation 
+            if 'model' in metric.forward.__code__.co_varnames:
+                self.log(f'val_{m}', metric(outputs, targets, self), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
+            else: 
+                self.log(f'val_{m}', metric(outputs, targets), prog_bar=True, sync_dist=True, batch_size=self.batch_size)
 
 
 class HEALPixUnetSSIM(HEALPixUnet, ABC):
