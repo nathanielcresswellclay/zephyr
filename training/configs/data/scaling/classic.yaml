@@ -19,6 +19,13 @@ z250:
 z500:
   mean: 55625.9609375
   std: 2681.712890625
+ttr1h:
+  mean: -872306.3
+  std: 166355.55
+# ttr1h scaling stats calculated on HPX64
+#ttr1h:
+#  mean: -831044.75
+#  std: 174273.8 
 tp6:
   mean: 0.
   std: 1.

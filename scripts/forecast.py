@@ -12,7 +12,6 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 import xarray as xr
-
 from training.dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
 
 logger = logging.getLogger(__name__)
@@ -141,13 +140,6 @@ def inference(args: argparse.Namespace):
     prediction_ds = to_chunked_dataset(prediction_ds, {'time': 1})
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
-<<<<<<< HEAD
-
-    output_file = os.path.join(args.output_directory,
-                               f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
-    logger.info("exporting data to %s", output_file)
-=======
-    
     if args.output_filename is None:
         output_file = os.path.join(args.output_directory,
                                    f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
@@ -155,7 +147,6 @@ def inference(args: argparse.Namespace):
         output_file = os.path.join(args.output_directory,
                                    args.output_filename+f".{'zarr' if args.to_zarr else 'nc'}")
     logger.info(f"exporting data to {output_file}")
->>>>>>> 02832e8c0755cb39b9696f48a255171a5bb1649c
     if args.to_zarr:
         prediction_ds.to_zarr(output_file)
     else:
@@ -167,7 +158,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Produce forecasts from a DLWP model.')
     parser.add_argument('-m', '--model-path', type=str, required=True,
                         help="Path to model training outputs directory")
-    parser.add_argument('-c', '--model-checkpoint', type=str, default='last.ckpt',
+    parser.add_argument('-c', '--model-checkpoint', type=str, default=None,
                         help="Model checkpoint file name")
     parser.add_argument('--model-version', default=None, type=int,
                         help="Model version. Defaults to using the latest available version unless a specific integer "

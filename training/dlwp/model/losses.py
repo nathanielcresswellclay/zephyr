@@ -1,5 +1,7 @@
 import torch
 from torch.nn import functional as F
+import pytorch_lightning as pl
+import numpy as np
 
 class LossOnStep(torch.nn.Module):
     """
@@ -10,8 +12,13 @@ class LossOnStep(torch.nn.Module):
         self.loss = loss
         self.time_slice = slice(step * time_dim, (step + 1) * time_dim)
 
-    def forward(self, inputs, targets):
-        return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice])
+    def forward(self, inputs, targets, model: torch.nn.Module = None):
+        
+        # check weather model is required for loss calculation 
+        if 'model' in self.loss.forward.__code__.co_varnames:
+            return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice], model)
+        else: 
+            return self.loss(inputs[:, self.time_slice], targets[:, self.time_slice])
 
 
 class GeneratorLoss(torch.nn.Module):
@@ -26,6 +33,84 @@ class GeneratorLoss(torch.nn.Module):
         else:
             return self.loss(inputs, targets)
 
+class MSE_SSIM(torch.nn.Module):
+    """
+    This class provides a compound loss formulation combining differential structural similarity (SSIM) and mean squared 
+    error (MSE). Calling this class will compute the loss using SSIM for fields indicated by model attributes 
+    (model.ssim_fields). 
+    """
+    def __init__(
+            self,
+            mse_params=None,
+            ssim_params=None,
+            ssim_variables = ['ttr1h', 'tcwv0'],
+            weights=[0.5,0.5],
+            ):
+        """
+        Constructor method.
+
+        :param mse_params: (Optional) parameters to pass to MSE constructor  
+        :param ssim_params: (Optional) dictionary of parameters to pass to SSIM constructor  
+        :ssim variables: (Optional) list of variables over which loss will be calculated using DSSIM and MSE 
+        :param weights: (Optional) variables identified as requireing SSIM-loss calculation 
+            will have their loss calculated by a weighted average od the DSSIM metric and MSE.
+            The weights of this weighted average are identified here. [MSE_weight, DSSIM_weight]
+        """
+
+        super(MSE_SSIM, self).__init__()
+        if ssim_params is None:
+            self.ssim = SSIM()  
+        else: 
+            self.ssim = SSIM(**ssim_params)
+        if mse_params is None:
+            self.mse = torch.nn.MSELoss() 
+        else: 
+            self.mse = torch.nn.MSELoss(**mse_params)
+        if np.sum(weights) == 1:
+            self.mse_dssim_weights = weights 
+        else:
+            raise ValueError('Weights passed to MSE_SSIM loss must sum to 1')
+        self.ssim_variables = ssim_variables 
+
+    def forward(
+            self,
+            outputs: torch.tensor,
+            targets: torch.tensor,
+            model: pl.LightningModule):
+
+        
+        # check tensor shapes to ensure proper computation of loss 
+        try:
+            assert outputs.shape[-1] == outputs.shape[-2]
+            assert outputs.shape[3] == 12
+            assert outputs.shape[2] == model.output_channels
+            assert (outputs.shape[1] == model.output_time_dim) or (outputs.shape[1] == model.output_time_dim//model.input_time_dim)
+        except AssertionError: 
+            print(f'losses.MSE_SSIM: expected output shape [batchsize, {model.output_time_dim}, {model.output_channels}, [spatial dims]] got {outputs.shape}')
+            exit()
+
+        # store the location of output and target tensors 
+        device = outputs.get_device()
+        # initialize losses by var tensor that will store the variable wise loss 
+        loss_by_var = torch.empty([outputs.shape[2]],device=f'cuda:{device}')
+        # initialize weights tensor that will allow for a weighted average of MSE and SSIM 
+        weights = torch.tensor(self.mse_dssim_weights,device=f'cuda:{device}')
+        # calculate variable wise loss 
+        for i,v in enumerate(model.output_variables):
+            # for logging purposes calculated DSIM and MSE for each variable
+            var_mse = self.mse(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]) # the slice operation here ensures the singleton dimension is not squashed
+            var_dssim = torch.min(torch.tensor([1.,float(var_mse)]))*(1-self.ssim(outputs[:,:,i:i+1,:,:,:],targets[:,:,i:i+1,:,:,:]))
+            if v in self.ssim_variables: 
+                # compute weighted average between mse and dssim
+                loss_by_var[i] = torch.sum( weights * torch.stack([var_mse,var_dssim]) )
+            else:
+                loss_by_var[i] = var_mse
+            model.log(f'MSEs_train/{model.output_variables[i]}', var_mse, batch_size=model.batch_size)
+            model.log(f'DSIMs_train/{model.output_variables[i]}', var_dssim, batch_size=model.batch_size)
+            model.log(f'losses_train/{model.output_variables[i]}', loss_by_var[i], batch_size=model.batch_size)
+        loss = loss_by_var.mean()
+        model.log(f'losses_train/all_vars', loss, batch_size=model.batch_size)
+        return loss
 
 class SSIM(torch.nn.Module):
     """

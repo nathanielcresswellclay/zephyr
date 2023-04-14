@@ -78,7 +78,7 @@ class EvaluatorBase(object):
         "t850": {
             "unit": r"$K$",
             "fname_era5": "temperature_850",
-            "vname_era5": "z",
+            "vname_era5": "t",
             "vname_long": "Air temperature 850hPa",
             "cmap": "coolwarm"
             },
@@ -137,6 +137,13 @@ class EvaluatorBase(object):
             "vname_era5": "sst",
             "vname_long": "Sea surface temperature",
             "cmap": "coolwarm"
+            },
+        "ttr1h": {
+            "unit": r"$J m^{-2}$",
+            "fname_era5": "ttr1h",
+            "vname_era5": "ttr1h",
+            "vname_long": "top net thermal radiation",
+            "cmap": "greys_r"
             }
         }
     
@@ -284,7 +291,7 @@ class EvaluatorBase(object):
                                     end=valid_init + (self.num_forecast_steps - 1) * self.forecast_dt,
                                     freq=pd.Timedelta(self.forecast_dt))
             ds_sel_dict = {time_dim_name: samples}
-            if self.is_latitude_evaluator: ds_sel_dict["latitude"] = self.forecast_da.coords["lat"][:180]
+            if self.is_latitude_evaluator: ds_sel_dict["latitude"] = self.forecast_da.coords["lat"]
             if level is not None: ds_sel_dict["level"] = level
             arguments.append([verification_path, vname, ds_sel_dict])
 
@@ -339,6 +346,7 @@ class EvaluatorBase(object):
         :param mean: Whether to return a single value or an array of length forecast steps
         """
         if self.on_latlon:
+            print('computing MSE on lat lon...')
             # Calculate the weights to apply to the (latitude-weighted) MSE
             weights = np.cos(np.deg2rad(self.verification_da.lat.values))
             weights /= weights.mean()        
@@ -346,10 +354,12 @@ class EvaluatorBase(object):
             weights = np.expand_dims(np.expand_dims(np.expand_dims(weights, axis=1), axis=0), axis=0)
 
             # Enforce proper order of dimensions in data arrays to avoid incorrect calculation
+            # support latitude and longitude as well as lat and lon  
             forec = self.forecast_da.transpose("time", "step", "lat", "lon")
             verif = self.verification_da.transpose("time", "step", "lat", "lon")
             axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
         else:
+            print('computing MSE on native...')
             weights = None  # No latitude weighting on the native mesh
             # Enforce aligning dimensions
             forec = self.forecast_da.transpose("time", "step", "face", "height", "width")
@@ -364,7 +374,10 @@ class EvaluatorBase(object):
         """
         return the RMSE of forecast against verification
         """
-        return np.sqrt(self.get_mse(mean=mean))
+        if self.unit_conversion is None: 
+            return np.sqrt(self.get_mse(mean=mean))
+        else: 
+            return self.unit_conversion*np.sqrt(self.get_mse(mean=mean))
 
     def get_ssim(
             self,
@@ -818,19 +831,13 @@ class EvaluatorLL(EvaluatorBase):
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
             if os.path.isfile(self.forecast_path):
-                if self.unit_conversion is None:
-                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
-                else: 
-                    if self.verbose: print(f"Converting values in forecast with by factor {self.unit_conversion}")
-                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]*self.unit_conversion
-                self.forecast_da = self.forecast_da.isel({"time": slice(0, 22)})
+                self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
                 #if times is not None: self.forecast_da = self.forecast_da.sel({"time": times})
                 self._get_metadata_from_da(self.forecast_da)
                 if self.verbose:
                     print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
             else: 
                 print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")        
-            self.forecast_da = self.forecast_da.isel(face=0).rename({"height": "lat", "width": "lon"})
 
     def faces2image(
         self,
@@ -880,7 +887,8 @@ class EvaluatorCS(EvaluatorBase):
         :param remap_config: dict:
                a dictionary that configures the remap of the forecast and verification
                from the CubeSphere
-        :param unit_conversion: float: factor to convert units in forecast file 
+        :param unit_conversion: float: factor to convert units in forecast file NOTE: This is different usage of unit 
+               conversion that other evaluators to maintain backwards compatability 
         :param on_latlon: bool: instructions whether to map CS forecast and predictor to LL
         :param times: A string indicating start and end date, e.g., "2016-01-01--2018-12-31"
         :param poolsize: Number of processes used for parallelization
@@ -977,6 +985,17 @@ class EvaluatorCS(EvaluatorBase):
         os.remove('ll_data.nc')
 
         return ll_da
+
+    def get_rmse(
+            self,
+            mean=True
+            ):
+        """
+        return the RMSE of forecast against verification
+        
+        OVERRIDES DEFAULT get_rmse to handle unit conversion appropriate for CS forecast conventions 
+        """
+        return np.sqrt(self.get_mse(mean=mean))
 
     def faces2image(
         self,
@@ -1080,9 +1099,6 @@ class EvaluatorHPX(EvaluatorBase):
                 else:
                     if self.verbose:
                         print("Instructed to not remap forecast into lat-lon mesh. Keeping native format.")
-                if self.unit_conversion is not None:
-                    if self.verbose: print(f"converting values in forecast with by factor {self.unit_conversion}")
-                    self.forecast_da = self.forecast_da*self.unit_conversion
                 self._get_metadata_from_da(self.forecast_da)
                 if self.verbose:
                     print(f"Initialized EvaluatorHPX around file {self.forecast_path} for {self.eval_variable}")
