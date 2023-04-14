@@ -49,7 +49,7 @@ class HEALPixRemap(_BaseRemap):
             latitudes: int,
             longitudes: int,
             nside: int,
-            order: str = "biquadratic",
+            order: str = "bilinear",
             resolution_factor: float = 1.0,
             verbose: bool = True
             ):
@@ -352,8 +352,9 @@ class HEALPixRemap(_BaseRemap):
             hp.cartview(hpx1d, title="Flipped and shifted horizontally", nest=True, **kwargs)
             hp.graticule()
             plt.savefig("cartview.pdf", format="pdf")
+            plt.close()
 
-        assert hpx1d_mask.all(), self.nans_found_in_data(data=hpx3d, visualize=visualize)
+        assert hpx1d_mask.all(), self.nans_found_in_data(data=hpx3d, data_orig=data, visualize=visualize)
 
         return hpx3d
 
@@ -502,7 +503,7 @@ class HEALPixRemap(_BaseRemap):
         plt.tight_layout()
         plt.savefig("mollview_plot.pdf", format="pdf")
 
-    def nans_found_in_data(self, data: np.array, visualize: bool = True) -> str:
+    def nans_found_in_data(self, data: np.array, data_orig: np.array, visualize: bool = True) -> str:
         """
         Unifies the twelve HEALPix faces into one array and visualizes it if desired. Returns an error message.
 
@@ -525,6 +526,10 @@ class HEALPixRemap(_BaseRemap):
         if visualize:
             plt.imshow(data)
             plt.savefig("hpx_plot_with_nans.pdf", format="pdf")
+            plt.close()
+            plt.imshow(data_orig)
+            plt.savefig("ll_plot_with_nans.pdf", format="pdf")
+            plt.close()
 
         return ("Found NaN in the projected data. This can occur when the resolution of the original data is too "
                 "small for the chosen HEALPix grid. Increasing the 'resolution_factor' of the HEALPixRemap instance "

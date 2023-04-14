@@ -111,6 +111,9 @@ assets/
 # Added for this project
 .idea
 .idea/
+*._.gitignore
+*._*.py
+*._*.yaml
 
 # Output directories
 */outputs

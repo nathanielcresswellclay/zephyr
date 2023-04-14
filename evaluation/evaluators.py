@@ -130,6 +130,13 @@ class EvaluatorBase(object):
             "vname_era5": "v10m",
             "vname_long": "V-component of wind 10m",
             "cmap": "Oranges"
+            },
+        "sst": {
+            "unit": r"$K$",
+            "fname_era5": "sea_surface_temperature",
+            "vname_era5": "sst",
+            "vname_long": "Sea surface temperature",
+            "cmap": "coolwarm"
             }
         }
     
@@ -215,9 +222,11 @@ class EvaluatorBase(object):
             climatology_ds = climatology_ds.transpose('time','step','lat','lon')
             self.climatology_da = climatology_ds.to_array().isel({"variable": 0})
         else:
-            verif_ds = xr.open_dataset(self.verification_path).rename(
-                {"sample": "time", "predictors": self.eval_variable}
-                )
+            verif_ds = xr.open_dataset(self.verification_path)#.rename(
+            if "predictors" in list(verif_ds.keys()):
+                verif_ds = verif_ds.rename({"sample": "time", "predictors": self.eval_variable})
+            else:
+                verif_ds = verif_ds.rename({"sample": "time"})
             for vname in ["lat", "lon", "mean", "std"]:
                 try:
                     verif_ds = verif_ds.drop_vars(vname)
@@ -264,7 +273,11 @@ class EvaluatorBase(object):
 
         # Prepare arguments to load verification data in parallel
         arguments = []
-        vname = variable_metas[self.eval_variable]["vname_era5"] if self.on_latlon else "predictors"
+        if self.on_latlon:
+            vname = variable_metas[self.eval_variable]["vname_era5"]
+        else:
+            ds = xr.open_dataset(self.verification_path)
+            vname = "predictors" if "predictors" in list(ds.keys()) else self.eval_variable
         for valid_init in valid_inits:
             # create array of dates corresponding to forecast hours
             samples = pd.date_range(start=valid_init,
@@ -516,6 +529,7 @@ class EvaluatorBase(object):
             forec = forec.groupby('f_day').mean()
             verif = verif.groupby('f_day').mean()
             climat = climat.groupby('f_day').mean()
+        
         return (np.nanmean((verif - climat)*(forec - climat), axis=axis_mean)
                 / np.sqrt(np.nanmean((verif - climat)**2., axis=axis_mean)
                           * np.nanmean((forec - climat)**2., axis=axis_mean)))
