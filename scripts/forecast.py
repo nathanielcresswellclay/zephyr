@@ -9,10 +9,13 @@ from hydra.utils import instantiate
 import dask.array
 import numpy as np
 import pandas as pd
-import torch
-from tqdm import tqdm
+import torch as th
 import xarray as xr
-from training.dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
+from tqdm import tqdm
+from torchinfo import summary
+from dask.diagnostics import ProgressBar
+
+from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
 
 logger = logging.getLogger(__name__)
 logging.getLogger('cfgrib').setLevel(logging.ERROR)
@@ -34,6 +37,22 @@ def get_forecast_dates(start, end, freq):
     return dates
 
 
+def read_forecast_dates_from_file(path):
+    import glob
+    file_paths = glob.glob(os.path.join(path, "*.txt"))
+    all_dates = []
+    for file_path in file_paths:
+        with open(file_path) as file:
+            dates = file.read().splitlines()
+            for date in dates:
+                if not np.datetime64("2000-01-01") < np.datetime64(date) < np.datetime64("2021-01-01"): continue
+                # Create numpy datetime64 at t-8, t-7, t-6, t-5, t-4 days
+                all_dates += list(pd.date_range(start=pd.Timestamp(date)-pd.Timedelta(8, "D"),
+                                                end=pd.Timestamp(date)-pd.Timedelta(4, "D"),
+                                                freq=pd.Timedelta(1, "D")).to_numpy())
+    return np.unique(np.sort(np.array(all_dates)))
+
+
 def get_latest_version(directory):
     all_versions = [os.path.join(directory, v) for v in os.listdir(directory)]
     all_versions = [v for v in all_versions if os.path.isdir(v)]
@@ -43,11 +62,26 @@ def get_latest_version(directory):
 
 def inference(args: argparse.Namespace):
     forecast_dates = get_forecast_dates(args.forecast_init_start, args.forecast_init_end, args.freq)
+    #forecast_dates_cold = read_forecast_dates_from_file(path="/home/disk/brume/karlbam/upps/data/cold_spells_na_eu")
+    #forecast_dates_hot = read_forecast_dates_from_file(path="/home/disk/brume/karlbam/upps/data/hot_spells_na_eu")
+    #forecast_dates = np.concatenate([forecast_dates_cold, forecast_dates_hot])
     os.makedirs(args.output_directory, exist_ok=True)
 
-    device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
-    with initialize(config_path=os.path.join(args.hydra_path, '.hydra')):
+    #print(forecast_dates)
+    #exit()
+    #forecast_dates = forecast_dates[-6:]
+
+    device = th.device(f'cuda:{args.gpu}' if th.cuda.is_available() else 'cpu')
+    with initialize(config_path=os.path.join(args.hydra_path, '.hydra'), version_base=None):
         cfg = compose('config.yaml')
+    batch_size = cfg.batch_size if args.batch_size is None else args.batch_size
+
+    cfg.num_workers = 0
+    batch_size = 1
+    cfg.data.prebuilt_dataset = True
+    cfg.model.enable_healpixpad = False
+    #exit()
+
 
     # Set up data module with some overrides for inference. Compute expected output time dimension.
     output_lead_times = np.arange(
@@ -57,7 +91,7 @@ def inference(args: argparse.Namespace):
     )
     output_time_dim = len(output_lead_times)
     optional_kwargs = {k: v for k, v in {
-        'directory': args.data_directory,
+        'dst_directory': args.data_directory,
         'prefix': args.data_prefix,
         'suffix': args.data_suffix
     }.items() if v is not None}
@@ -66,37 +100,49 @@ def inference(args: argparse.Namespace):
         output_time_dim=output_time_dim,
         forecast_init_times=forecast_dates,
         shuffle=False,
-        batch_size=1,
+        batch_size=batch_size,
         **optional_kwargs
     )
-    data_module.setup()
-    loader = data_module.test_dataloader()
+    loader, _ = data_module.test_dataloader()
 
     # Load the model checkpoint. Set output_time_dim param override.
-    model = instantiate(cfg.model)
+    input_channels = len(cfg.data.input_variables)
+    output_channels = len(cfg.data.output_variables) if cfg.data.output_variables is not None else input_channels
+    constants_arr = data_module.constants
+    n_constants = 0 if constants_arr is None else len(constants_arr.keys()) # previously was 0 but with new format it is 1
+
+    decoder_input_channels = int(cfg.data.get('add_insolation', 0))
+    cfg.model['input_channels'] = input_channels
+    cfg.model['output_channels'] = output_channels
+    cfg.model['n_constants'] = n_constants
+    cfg.model['decoder_input_channels'] = decoder_input_channels
+
+    #constants_arr = data_module.get_constants()
+    #model = instantiate(cfg.model, constants=constants_arr, output_time_dim=output_time_dim)
+    model = instantiate(cfg.model, output_time_dim=output_time_dim)
     model_name = Path(args.model_path).name
-    version_directory = os.path.join(args.model_path, 'tensorboard', model_name)
-    if args.model_version is None:
-        model_version = get_latest_version(version_directory)
-    else:
-        model_version = f'version_{args.model_version}'
-    checkpoint_basepath = os.path.join(version_directory, model_version, 'checkpoints')
+    checkpoint_basepath = os.path.join(args.model_path, "tensorboard", "checkpoints")
     if args.model_checkpoint is None:
         checkpoint_path = get_best_checkpoint_path(path=checkpoint_basepath)
     else:
         checkpoint_path = os.path.join(checkpoint_basepath, args.model_checkpoint)
     logger.info("load model checkpoint %s", checkpoint_path)
-    model = model.load_from_checkpoint(checkpoint_path, map_location=device, output_time_dim=output_time_dim,
-                                       strict=not args.non_strict)
+
+    checkpoint = th.load(checkpoint_path, map_location=device)
+    #model_state_dict = {key.replace("module.", ""): checkpoint["model_state_dict"][key] for key in checkpoint["model_state_dict"].keys()}
+    model_state_dict = checkpoint["model_state_dict"]
+    model.load_state_dict(model_state_dict)
     model = model.to(device)
+    model.eval()
+    summary(model)
 
     # Allocate giant array. One extra time step for the init state.
     logger.info("allocating prediction array. If this fails due to OOM consider reducing lead times or "
                 "number of forecasts.")
-    prediction = np.empty(
-        (len(loader), output_time_dim + 1, len(data_module.output_variables)) + data_module.test_dataset.spatial_dims,
-        dtype='float32'
-    )
+    prediction = np.empty((len(forecast_dates),
+                           output_time_dim + 1,
+                           len(data_module.output_variables)) + data_module.test_dataset.spatial_dims,
+                           dtype='float32')
 
     # Iterate over model predictions
     pbar = tqdm(loader)
@@ -104,10 +150,10 @@ def inference(args: argparse.Namespace):
         pbar.postfix = pd.Timestamp(forecast_dates[j]).strftime('init %Y-%m-%d %HZ')
         pbar.update()
         # Last input time step for init state
-        prediction[j][0] = inputs[0][0, -1]
+        prediction[j*batch_size:(j+1)*batch_size][:, 0] = inputs[0].permute(0, 2, 3, 1, 4, 5)[:, -1]
         inputs = [i.to(device) for i in inputs]
-        with torch.no_grad():
-            prediction[j][1:] = model(inputs).cpu().numpy()
+        with th.no_grad():
+            prediction[j*batch_size:(j+1)*batch_size][:, 1:] = model(inputs).permute(0, 2, 3, 1, 4, 5).cpu().numpy()
 
     # Generate dataarray with coordinates
     meta_ds = data_module.test_dataset.ds
@@ -137,20 +183,18 @@ def inference(args: argparse.Namespace):
 
     # Export dataset
     write_time = time.time()
-    prediction_ds = to_chunked_dataset(prediction_ds, {'time': 1})
+    prediction_ds = to_chunked_dataset(prediction_ds, {'time': 8})
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
-    if args.output_filename is None:
-        output_file = os.path.join(args.output_directory,
-                                   f"forecast_{model_name}_v{args.model_version}.{'zarr' if args.to_zarr else 'nc'}")
-    else:
-        output_file = os.path.join(args.output_directory,
-                                   args.output_filename+f".{'zarr' if args.to_zarr else 'nc'}")
-    logger.info(f"exporting data to {output_file}")
+
+    output_file = os.path.join(args.output_directory, f"forecast_{model_name}.{'zarr' if args.to_zarr else 'nc'}")
+    logger.info(f"writing forecasts to {output_file}")
     if args.to_zarr:
-        prediction_ds.to_zarr(output_file)
+        write_job = prediction_ds.to_zarr(output_file, compute=False)
     else:
-        prediction_ds.to_netcdf(output_file)
+        write_job = prediction_ds.to_netcdf(output_file, compute=False)
+    with ProgressBar():
+        write_job.compute()
     logger.debug("wrote file in %0.1f s", time.time() - write_time)
 
 
@@ -159,10 +203,8 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model-path', type=str, required=True,
                         help="Path to model training outputs directory")
     parser.add_argument('-c', '--model-checkpoint', type=str, default=None,
-                        help="Model checkpoint file name")
-    parser.add_argument('--model-version', default=None, type=int,
-                        help="Model version. Defaults to using the latest available version unless a specific integer "
-                             "version number is specified.")
+                        help="Model checkpoint file name (include ending). Set 'last.ckpt' to use last checkpoint. If "
+                             "None, the best will be chosen (according to validation error).")
     parser.add_argument('--non-strict', action='store_true',
                         help="Disable strict mode for model checkpoint loading")
     parser.add_argument('-l', '--lead-time', type=int, default=168,
@@ -175,7 +217,9 @@ if __name__ == '__main__':
                         help="Frequency of forecast initialization. There is a special case, 'biweekly', which will "
                              "follow the ECMWF standard of two forecasts per week, with a 3- followed by 4-day gap. "
                              "Otherwise, interpretable by pandas.")
-    parser.add_argument('-o', '--output-directory', type=str, default='.',
+    parser.add_argument('-b', '--batch-size', type=int, default=None,
+                        help="The batch size that is used to generate the forecast.")
+    parser.add_argument('-o', '--output-directory', type=str, default='forecasts/',
                         help="Directory in which to save output forecast")
     parser.add_argument('--encode-int', action='store_true',
                         help="Encode data variables as int16 type (may not be compatible with tempest-remap)")
@@ -189,8 +233,6 @@ if __name__ == '__main__':
                         help="Suffix for test data files")
     parser.add_argument('--gpu', type=int, default=0,
                         help="Index of GPU device on which to run model")
-    parser.add_argument('--output-filename',type=str, default=None,
-                        help="output forecast filename")
 
     configure_logging(2)
     run_args = parser.parse_args()

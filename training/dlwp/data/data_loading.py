@@ -1,20 +1,26 @@
 import logging
 import os
+import shutil
 import time
 from typing import DefaultDict, Optional, Sequence, Union
 
-from omegaconf import DictConfig, OmegaConf
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset
 import xarray as xr
+from torch.utils.data import Dataset
+from dask.diagnostics import ProgressBar
+from omegaconf import DictConfig, OmegaConf
+
+import torch
+import torch.nn.functional as F
+import torch.distributed as dist
 
 from training.dlwp.utils import insolation
 
 logger = logging.getLogger(__name__)
 
 
-def open_time_series_dataset_classic(
+def open_time_series_dataset_classic_on_the_fly(
         directory: str,
         input_variables: Sequence,
         output_variables: Optional[Sequence],
@@ -36,18 +42,139 @@ def open_time_series_dataset_classic(
     logger.info("merging input datasets")
 
     datasets = []
-    remove_attrs = ['varlev', 'mean', 'std']
+    remove_attrs = ['mean', 'std'] if "LL" in prefix else ['varlev', 'mean', 'std']
     for variable in all_variables:
         file_name = get_file_name(directory, variable)
         logger.debug("open nc dataset %s", file_name)
-        ds = xr.open_dataset(file_name, chunks={'sample': batch_size}).isel(varlev=0)
+        #ds = xr.open_dataset(file_name, chunks={'sample': batch_size})#.isel(varlev=0)
+        ds = xr.open_dataset(file_name, chunks={'sample': batch_size}, autoclose=True)#.isel(varlev=0)
+        #ds = xr.open_zarr(file_name)#.isel(varlev=0)
+        #if "predictors" not in list(ds.keys()): ds = ds.rename({list(ds.keys())[-1]: "predictors"})
+        
+        if "LL" in prefix:
+            ds = ds.rename({"lat": "height", "lon": "width"})
+            ds = ds.isel({"height": slice(0, 180)})
+        try:
+            ds = ds.isel(varlev=0)
+        except ValueError:
+            pass
+        
         for attr in remove_attrs:
             try:
                 ds = ds.drop(attr)
             except ValueError:
                 pass
         # Rename variable
-        ds = ds.rename({'predictors': variable, 'sample': 'time'})
+        #ds = ds.rename({'predictors': variable, 'sample': 'time'})
+        try:
+            ds = ds.rename({'sample': 'time'})
+        except (ValueError, KeyError):
+            pass
+        ds = ds.chunk({"time": batch_size})
+
+        # Change lat/lon to coordinates
+        try:
+            ds = ds.set_coords(['lat', 'lon'])
+        except (ValueError, KeyError):
+            pass
+        datasets.append(ds)
+    # Merge datasets
+    data = xr.merge(datasets, compat="override")
+
+    # Convert to input/target array by merging along the variables
+    input_da = data[list(input_variables)].to_array('channel_in', name='inputs').transpose(
+        'time', 'channel_in', 'face', 'height', 'width')
+    target_da = data[list(output_variables)].to_array('channel_out', name='targets').transpose(
+        'time', 'channel_out', 'face', 'height', 'width')
+
+    result = xr.Dataset()
+    result['inputs'] = input_da
+    result['targets'] = target_da
+    
+    # Get constants
+    if constants is not None:
+        constants_ds = []
+        for name, var in constants.items():
+            #constants_ds.append(xr.open_dataset(get_file_name(directory, name)).set_coords(['lat', 'lon'])[var])
+            constants_ds.append(xr.open_dataset(get_file_name(directory, name), autoclose=True).set_coords(['lat', 'lon'])[var])
+            #constants_ds.append(xr.open_zarr(get_file_name(directory, name)).set_coords(['lat', 'lon'])[var])
+        constants_ds = xr.merge(constants_ds, compat='override')
+        constants_da = constants_ds.to_array('channel_c', name='constants').transpose(
+            'channel_c', 'face', 'height', 'width')
+        result['constants'] = constants_da
+
+    logger.info("merged datasets in %0.1f s", time.time() - merge_time)
+
+    return result
+    
+
+def open_time_series_dataset_classic_prebuilt(
+        directory: str,
+        dataset_name: str,
+        constants: bool = False,
+        batch_size: int = 32
+        ) -> xr.Dataset:
+
+    result = xr.open_zarr(os.path.join(directory, dataset_name + ".zarr"), chunks={'time': batch_size})
+    #result = xr.open_zarr(os.path.join(directory, dataset_name + ".zarr"))
+    return result
+
+
+def create_time_series_dataset_classic(
+        src_directory: str,
+        dst_directory: str,
+        dataset_name: str,
+        input_variables: Sequence,
+        output_variables: Optional[Sequence],
+        constants: Optional[DefaultDict] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
+        batch_size: int = 32,
+        scaling: Optional[DictConfig] = None,
+        overwrite: bool = False,
+        ) -> xr.Dataset:
+
+    file_exists = os.path.exists(os.path.join(dst_directory, dataset_name + ".zarr"))
+
+    if file_exists and not overwrite:
+        logger.info("opening input datasets")
+        return open_time_series_dataset_classic_prebuilt(directory=dst_directory, dataset_name=dataset_name,
+                                                         constants=constants is not None)
+    elif file_exists and overwrite:
+        shutil.rmtree(os.path.join(dst_directory, dataset_name + ".zarr"))
+
+    output_variables = output_variables or input_variables
+    all_variables = np.union1d(input_variables, output_variables)
+    prefix = prefix or ''
+    suffix = suffix or ''
+
+    def get_file_name(path, var):
+        return os.path.join(path, f"{prefix}{var}{suffix}.nc")
+
+    merge_time = time.time()
+    logger.info("merging input datasets")
+
+    datasets = []
+    remove_attrs = ['varlev', 'mean', 'std']
+    for variable in all_variables:
+        file_name = get_file_name(src_directory, variable)
+        logger.debug("open nc dataset %s", file_name)
+        if "sample" in list(xr.open_dataset(file_name).dims.keys()):
+            ds = xr.open_dataset(file_name, chunks={'sample': batch_size}).rename({"sample": "time"})
+        else:
+            ds = xr.open_dataset(file_name, chunks={"time": batch_size})
+        if "varlev" in ds.dims:
+            ds = ds.isel(varlev=0)
+
+        for attr in remove_attrs:
+            try:
+                ds = ds.drop(attr)
+            except ValueError:
+                pass
+        # Rename variable
+        if "predictors" in list(ds.keys()):
+            ds = ds.rename({"predictors": variable})
+
         # Change lat/lon to coordinates
         try:
             ds = ds.set_coords(['lat', 'lon'])
@@ -59,7 +186,7 @@ def open_time_series_dataset_classic(
                            - np.log(scaling[variable]['log_epsilon'])
         datasets.append(ds)
     # Merge datasets
-    data = xr.merge(datasets)
+    data = xr.merge(datasets, compat="override")
 
     # Convert to input/target array by merging along the variables
     input_da = data[list(input_variables)].to_array('channel_in', name='inputs').transpose(
@@ -75,73 +202,27 @@ def open_time_series_dataset_classic(
     if constants is not None:
         constants_ds = []
         for name, var in constants.items():
-            constants_ds.append(xr.open_dataset(get_file_name(directory, name)).set_coords(['lat', 'lon'])[var])
+            constants_ds.append(xr.open_dataset(
+                get_file_name(src_directory, name)
+                ).set_coords(['lat', 'lon'])[var].astype(np.float32))
         constants_ds = xr.merge(constants_ds, compat='override')
         constants_da = constants_ds.to_array('channel_c', name='constants').transpose(
             'channel_c', 'face', 'height', 'width')
         result['constants'] = constants_da
 
     logger.info("merged datasets in %0.1f s", time.time() - merge_time)
+    logger.info("writing unified dataset to file (takes long!)")
 
-    return result
+    # writing out
+    def write_zarr(data, path):
+        #write_job = data.to_netcdf(path, compute=False)
+        write_job = data.to_zarr(path, compute=False)
+        with ProgressBar():
+            logger.info(f"writing dataset to {path}")
+            write_job.compute()
 
-
-def open_time_series_dataset_zarr(
-        directory: str,
-        input_variables: Sequence,
-        output_variables: Optional[Sequence],
-        constants: Optional[DefaultDict] = None,
-        prefix: Optional[str] = None,
-        suffix: Optional[str] = None,
-        batch_size: int = 32,  # pylint: disable=unused-argument
-        scaling: Optional[DictConfig] = None
-) -> xr.Dataset:
-    output_variables = output_variables or input_variables
-    all_variables = np.union1d(input_variables, output_variables)
-    prefix = prefix or ''
-    suffix = suffix or ''
-
-    def get_file_name(path, var):
-        return os.path.join(path, f"{prefix}{var}{suffix}.zarr")
-
-    merge_time = time.time()
-    logger.info("merging input datasets")
-
-    datasets = []
-    for variable in all_variables:
-        file_name = get_file_name(directory, variable)
-        logger.debug("open zarr dataset %s", file_name)
-        ds = xr.open_zarr(file_name)
-        # Apply log scaling lazily
-        if variable in scaling and scaling[variable].get('log_epsilon', None) is not None:
-            ds[variable] = np.log(ds[variable] + scaling[variable]['log_epsilon']) \
-                           - np.log(scaling[variable]['log_epsilon'])
-        datasets.append(ds)
-    # Merge datasets
-    data = xr.merge(datasets)
-
-    # Convert to input/target array by merging along the variables
-    input_da = data[list(input_variables)].to_array('channel_in', name='inputs').transpose(
-        'time', 'channel_in', 'face', 'height', 'width')
-    target_da = data[list(output_variables)].to_array('channel_out', name='targets').transpose(
-        'time', 'channel_out', 'face', 'height', 'width')
-
-    result = xr.Dataset()
-    result['inputs'] = input_da
-    result['targets'] = target_da
-
-    # Get constants
-    if constants is not None:
-        constants_ds = []
-        for name, var in constants.items():
-            constants_ds.append(xr.open_zarr(get_file_name(directory, name))[var])
-        constants_ds = xr.merge(constants_ds, compat='override')
-        constants_da = constants_ds.to_array('channel_c', name='constants').transpose(
-            'channel_c', 'face', 'height', 'width')
-        result['constants'] = constants_da
-
-    logger.info("merged datasets in %0.1f s", time.time() - merge_time)
-
+    write_zarr(data=result, path=os.path.join(dst_directory, dataset_name + ".zarr"))
+    
     return result
 
 
@@ -240,6 +321,19 @@ class TimeSeriesDataset(Dataset):
         self.target_scaling = None
         self._get_scaling_da()
 
+        #self.inputs_result = [np.random.randn(16, 12, 2, 7, 64, 64), np.random.randn(16, 12, 6, 1, 64, 64), np.random.randn(12, 2, 64, 64)]
+        #self.target = np.random.randn(16, 12, 4, 7, 64, 64)
+
+    def get_constants(self):
+        # extract from ds:
+        const = self.ds.constants.values
+
+        # transpose to match new format:
+        # [C, F, H, W] -> [F, C, H, W]
+        const = np.transpose(const, axes=(1, 0, 2, 3))
+
+        return const
+
     @staticmethod
     def _convert_time_step(dt):  # pylint: disable=invalid-name
         return pd.Timedelta(hours=dt) if isinstance(dt, int) else pd.Timedelta(dt)
@@ -248,13 +342,19 @@ class TimeSeriesDataset(Dataset):
         scaling_df = pd.DataFrame.from_dict(self.scaling).T
         scaling_df.loc['zeros'] = {'mean': 0., 'std': 1.}
         scaling_da = scaling_df.to_xarray().astype('float32')
+
+        # REMARK: we remove the xarray overhead from these
         try:
             self.input_scaling = scaling_da.sel(index=self.ds.channel_in.values).rename({'index': 'channel_in'})
+            self.input_scaling = {"mean": np.expand_dims(self.input_scaling["mean"].to_numpy(), (0, 2, 3, 4)),
+                                  "std": np.expand_dims(self.input_scaling["std"].to_numpy(), (0, 2, 3, 4))}
         except (ValueError, KeyError):
             raise KeyError(f"one or more of the input data variables f{list(self.ds.channel_in)} not found in the "
                            f"scaling config dict data.scaling ({list(self.scaling.keys())})")
         try:
             self.target_scaling = scaling_da.sel(index=self.ds.channel_out.values).rename({'index': 'channel_out'})
+            self.target_scaling = {"mean": np.expand_dims(self.target_scaling["mean"].to_numpy(), (0, 2, 3, 4)),
+                                   "std": np.expand_dims(self.target_scaling["std"].to_numpy(), (0, 2, 3, 4))}
         except (ValueError, KeyError):
             raise KeyError(f"one or more of the target data variables f{list(self.ds.channel_out)} not found in the "
                            f"scaling config dict data.scaling ({list(self.scaling.keys())})")
@@ -286,21 +386,38 @@ class TimeSeriesDataset(Dataset):
         return self.ds.time[slice(*time_index)].values
 
     def __getitem__(self, item):
+
+        #return self.inputs_result, self.target
+
+        # start range
+        torch.cuda.nvtx.range_push("TimeSeriesDataset:__getitem__")
+        
         if item < 0:
             item = len(self) + item
         if item < 0 or item > len(self):
             raise IndexError(f"index {item} out of range for dataset with length {len(self)}")
 
+        # remark: load first then normalize
+        torch.cuda.nvtx.range_push("TimeSeriesDataset:__getitem__:load_batch")
         time_index, this_batch = self._get_time_index(item)
         batch = {'time': slice(*time_index)}
         load_time = time.time()
-        input_array = ((self.ds['inputs'].isel(**batch) - self.input_scaling['mean']) /
-                       self.input_scaling['std']).compute()
-        if not self.forecast_mode:
-            target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
-                            self.target_scaling['std']).compute()
-        logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
 
+
+        input_array = self.ds['inputs'].isel(**batch).to_numpy()
+        input_array = (input_array - self.input_scaling['mean']) / self.input_scaling['std']
+        #input_array = ((self.ds['inputs'].isel(**batch) - self.input_scaling['mean']) /
+        #               self.input_scaling['std']).compute()
+        if not self.forecast_mode:
+            target_array = self.ds['targets'].isel(**batch).to_numpy()
+            target_array = (target_array - self.target_scaling['mean']) / self.target_scaling['std']
+            #target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
+            #                self.target_scaling['std']).compute()
+            
+        logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
+        torch.cuda.nvtx.range_pop()
+
+        torch.cuda.nvtx.range_push("TimeSeriesDataset:__getitem__:process_batch")
         compute_time = time.time()
         # Insolation
         if self.add_insolation:
@@ -317,8 +434,10 @@ class TimeSeriesDataset(Dataset):
 
         # Iterate over valid sample windows
         for sample in range(this_batch):
+            #print("INPUT INDICES", self._input_indices[sample], input_array.shape, input_array[self._input_indices[sample]].shape)
             inputs[sample] = input_array[self._input_indices[sample]]
             if not self.forecast_mode:
+                #print("OUTPUT INDICES", self._output_indices[sample], target_array.shape, target_array[self._output_indices[sample]].shape)
                 targets[sample] = target_array[self._output_indices[sample]]
             if self.add_insolation:
                 decoder_inputs[sample] = sol if self.forecast_mode else \
@@ -327,10 +446,29 @@ class TimeSeriesDataset(Dataset):
         inputs_result = [inputs]
         if self.add_insolation:
             inputs_result.append(decoder_inputs)
+
+        # we need to transpose channels and data:
+        # [B, T, C, F, H, W] -> [B, F, T, C, H, W]
+        inputs_result = [np.transpose(x, axes=(0, 3, 1, 2, 4, 5)) for x in inputs_result]
+            
         if 'constants' in self.ds.data_vars:
-            inputs_result.append(self.ds.constants.values)
+            # Add the constants as [F, C, H, W]
+            inputs_result.append(np.swapaxes(self.ds.constants.values, 0, 1))
+            #inputs_result.append(self.ds.constants.values)
         logger.log(5, "computed batch in %0.2f s", time.time() - compute_time)
+        torch.cuda.nvtx.range_pop()
+
+        # finish range
+        torch.cuda.nvtx.range_pop()
+
 
         if self.forecast_mode:
             return inputs_result
+
+        # we also need to transpose targets
+        targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
+
+        #print((inputs_result[0] != 0).any())
+        #print((inputs_result[1] != 0).any())
+
         return inputs_result, targets

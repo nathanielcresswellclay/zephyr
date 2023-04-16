@@ -3,8 +3,10 @@ defaults:
   - scaling: classic
   - splits: default
 
-directory: /home/quicksilver2/karlbam/Data/DLWP/HPX32
-prefix: era5_1deg_3h_HPX64_1979-2018_
+src_directory: /home/quicksilver2/karlbam/Data/DLWP/HPX64
+dst_directory: /home/quicksilver2/karlbam/Data/DLWP/HPX64
+dataset_name: era5_hpx64_7var_6h_24h
+prefix: era5_0.25deg_3h_HPX64_1979-2021_
 suffix: ''
 data_format: classic
 input_variables:
@@ -27,3 +29,4 @@ gap: 6H
 add_insolation: true
 nside: 64
 cube_dim: ${data.nside}
+prebuilt_dataset: true

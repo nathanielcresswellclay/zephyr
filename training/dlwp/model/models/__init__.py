@@ -1,4 +1,3 @@
-from .unet import CubeSphereUnet
-from .hpx_unet import HEALPixUnet,HEALPixUnetCustomLoss
+from .unet import CubeSphereUNet, HEALPixUNet, HEALPixRecUNet
 
-__all__ = ['CubeSphereUnet', 'HEALPixUnet', 'HEALPixUnetCustomLoss']
+__all__ = ['CubeSphereUNet', 'HEALPixUNet', 'HEALPixRecUNet']

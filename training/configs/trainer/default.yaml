@@ -1,9 +1,13 @@
-_target_: pytorch_lightning.Trainer
+defaults:
+  - criterion: mse
+  - optimizer: adam
+  - lr_scheduler: cosine
+
+_target_: training.dlwp.trainer.trainer.Trainer
 _recursive_: true
-benchmark: false
-deterministic: false
-gpus: 1
-log_every_n_steps: 10
-max_epochs: 500
-min_epochs: 100
-val_check_interval: 1.0
+max_epochs: 50
+min_epochs: 1
+early_stopping_patience: null
+amp_mode: "fp16"
+graph_mode: "train_eval"
+output_dir: ${output_dir}

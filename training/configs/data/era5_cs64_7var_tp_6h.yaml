@@ -3,7 +3,9 @@ defaults:
   - scaling: zeros
   - splits: default
 
-directory: /home/quicksilver2/jweyn/Data/DLWP
+src_directory: /home/quicksilver2/jweyn/Data/DLWP
+dst_directory: /home/quicksilver2/karlbam/Data/DLWP/CS64
+dataset_name: era5_cs64_7var_tp_6h_24h
 prefix: era5_1deg_3h_CS64S_1979-2018_
 suffix: ''
 data_format: classic
