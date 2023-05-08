@@ -369,12 +369,16 @@ class Trainer():
                                 output = self.model(inputs)
                                 validation_stats[0] += self.compute_loss(prediction=output, target=target) * bsize
                                 for v_idx, v_name in enumerate(self.output_variables):
-                                    validation_stats[1+v_idx] += self.static_losses_eval[v_idx] * bsize
+                                    validation_stats[1+v_idx] += self.criterion(
+                                        output[v_idx], target[v_idx]
+                                        )*self.loss_weights[v_idx] * bsize
                         else:
                             output = self.model(inputs)
                             validation_stats[0] += self.compute_loss(prediction=output, target=target) * bsize
                             for v_idx, v_name in enumerate(self.output_variables):
-                                validation_stats[1+v_idx] += self.static_losses_eval[v_idx] * bsize
+                                validation_stats[1+v_idx] += self.criterion(
+                                        output[v_idx], target[v_idx]
+                                        )*self.loss_weights[v_idx] * bsize
 
                     pbar.set_postfix({"Loss": (validation_stats[0]/validation_stats[-1]).item()})
 
