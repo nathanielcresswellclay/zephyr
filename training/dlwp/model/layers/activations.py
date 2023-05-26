@@ -16,7 +16,7 @@ class CappedLeakyReLU(torch.nn.Module):
 
     def forward(self, inputs):
         x = self.relu(inputs)
-        x = torch.clamp(x, max=self.cap)
+        x = torch.clamp(x, max=self.cap.to(device=x.device).get_device())
         return x
 
 class CappedGELU(torch.nn.Module):
