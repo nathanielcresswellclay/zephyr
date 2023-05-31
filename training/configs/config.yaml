@@ -5,10 +5,10 @@ defaults:
       - learning_rate_monitor
       - model_checkpoint
       - progress_bar
-  - data: era5_cs64_7var_6h_24h
+  - data: era5_hpx64_7var_6h_24h
   - logger: tensorboard
-  - model: cube_sphere_unet
-  - trainer: default
+  - model: healpix_unet3plus 
+  - trainer: parallel
 
 experiment_name: ${now:%Y-%m-%d}_${now:%H-%M-%S}
 checkpoint_path: null

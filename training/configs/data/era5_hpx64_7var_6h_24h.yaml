@@ -3,8 +3,8 @@ defaults:
   - scaling: classic
   - splits: default
 
-directory: /home/quicksilver2/karlbam/Data/DLWP/HPX32
-prefix: era5_1deg_3h_HPX64_1979-2018_
+directory: /home/quicksilver2/karlbam/Data/DLWP/HPX64
+prefix: era5_0.25deg_3h_HPX64_1979-2021_
 suffix: ''
 data_format: classic
 input_variables:

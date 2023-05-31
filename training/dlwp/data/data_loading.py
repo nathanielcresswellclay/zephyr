@@ -36,18 +36,18 @@ def open_time_series_dataset_classic(
     logger.info("merging input datasets")
 
     datasets = []
-    remove_attrs = ['varlev', 'mean', 'std']
+    remove_attrs = [ 'level', 'mean', 'std']
     for variable in all_variables:
         file_name = get_file_name(directory, variable)
         logger.debug("open nc dataset %s", file_name)
-        ds = xr.open_dataset(file_name, chunks={'sample': batch_size}).isel(varlev=0)
+        ds = xr.open_dataset(file_name, chunks={'sample': batch_size})
         for attr in remove_attrs:
             try:
                 ds = ds.drop(attr)
             except ValueError:
                 pass
         # Rename variable
-        ds = ds.rename({'predictors': variable, 'sample': 'time'})
+        #ds = ds.rename({'predictors': variable, 'sample': 'time'})
         # Change lat/lon to coordinates
         try:
             ds = ds.set_coords(['lat', 'lon'])
@@ -60,6 +60,7 @@ def open_time_series_dataset_classic(
         datasets.append(ds)
     # Merge datasets
     data = xr.merge(datasets)
+    data = data.rename({'sample':'time'})
 
     # Convert to input/target array by merging along the variables
     input_da = data[list(input_variables)].to_array('channel_in', name='inputs').transpose(
