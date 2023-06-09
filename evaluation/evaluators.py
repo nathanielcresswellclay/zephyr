@@ -16,8 +16,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 # https://stackoverflow.com/questions/57354700/starmap-combined-with-tqdm/57364423#57364423
 from .istarmap import istarmap
-from data_processing.remap import CubeSphereRemap, HEALPixRemap
-from training.dlwp.model.losses import SSIM
+from ..data_processing.remap import CubeSphereRemap, HEALPixRemap
+from ..training.dlwp.model.losses import SSIM
 
 
 def load_da_parallel(
@@ -315,7 +315,7 @@ class EvaluatorBase(object):
     def get_acc(
             self,
             climatology_path: str = None,
-            mean: bool = True,
+            mean: bool = False,
             ):
         """
         Return the ACC of the forecast under consideration of a climatology file
@@ -369,7 +369,7 @@ class EvaluatorBase(object):
         
     def get_rmse(
             self,
-            mean=True
+            mean=False
             ):
         """
         return the RMSE of forecast against verification

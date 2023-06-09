@@ -1,23 +1,22 @@
 analyses:
   #- ssim
-  - acc
+  #- acc
   - rmse
   #- rmse_per_face
   #- image_series_native
 
 evaluate_variables_in_parallel: True
 variables:
-  #- t2m0
-  #- tcwv0
+#  - t2m0
+#  - tcwv0
   - z500
-  #- z1000
-  #- sst
+#  - z1000
 
 evaluation_directory: evaluation/outputs/tmp
 
 
 forecasts:
-  src_path: /home/disk/brume/karlbam
+  src_path: ../
   global_overrides:
     #- evaluator.times="2018-12-10--2018-12-31"
     - transfer_das=True
@@ -26,21 +25,12 @@ forecasts:
   
   models:
 
-    UNet:
-      forecast_path: DELUSioN/evaluation/forecasts/forecast_06-02-02_unet_gelu_ep300_vNone.nc
+    HPX64:
+      forecast_path: forecast_14-20-35_vNone.nc
       forecast_overrides:  
-        - evaluator=cs
+        - evaluator=hpx
         - paths.verification_ll=/home/disk/quicksilver/nacc/Data/ERA5/1deg/1979-2022_era5_1deg_3h_
-        - rescale_das=True
-      analysis_overrides:
-        acc:
-          - analysis.arguments.climatology_path=null
-    UNet3+:
-      forecast_path: DELUSioN/evaluation/forecasts/forecast_06-02-02_unet3plus_bs64_c64-128-256_vNone.nc
-      forecast_overrides:  
-        - evaluator=cs
-        - paths.verification_ll=/home/disk/quicksilver/nacc/Data/ERA5/1deg/1979-2022_era5_1deg_3h_
-        - rescale_das=True
+        - rescale_das=False
       analysis_overrides:
         acc:
           - analysis.arguments.climatology_path=null
