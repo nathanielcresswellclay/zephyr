@@ -1,8 +1,17 @@
 import matplotlib.pyplot as plt
 import os
+import numpy as np
 from ..evaluation import evaluators
 from .statics import variable_labels as vl
 
+
+def get_daily_interval(fhours):
+
+    """
+    This function takes a list of forecast hours and subsampl
+    """
+    
+    return np.arange(fhours[0],fhours[-1]+1,24)
 
 def acc_rmse_compare(
         forecasts: list, eval_variables: list, plot=True, plot_file='metrics.pdf',
@@ -110,9 +119,14 @@ Check eval_variables or forecast labels for duplicates')
                     metrics[forecast]['fhours'],
                     metrics[forecast][eval_variable]['rmse'],
                     label = forecast if i==0 else None,)
-                axs[i,1].plot(
-                    metrics[forecast]['fhours'],
-                    metrics[forecast][eval_variable]['acc'],)
+                if eval_variable=='t2m0': # t2m ACC are calculated as daily averages 
+                    axs[i,1].plot(
+                        np.arange(fhours[0],fhours[-1]+1,24),
+                        metrics[forecast][eval_variable]['acc'],)
+                else:
+                    axs[i,1].plot(
+                        metrics[forecast]['fhours'],
+                        metrics[forecast][eval_variable]['acc'],)
             axs[i,0].grid()
             axs[i,1].grid()
             axs[i,0].set_xticks(xticks) 
