@@ -17,7 +17,7 @@ import numpy as np
 # Internal modules
 from .data_loading import create_time_series_dataset_classic, open_time_series_dataset_classic_prebuilt, \
                           open_time_series_dataset_classic_on_the_fly, \
-                          TimeSeriesDataset
+                          TimeSeriesDataset, CoupledTimeSeriesDataset
 
 logger = logging.getLogger(__name__)
 
@@ -344,3 +344,106 @@ class TimeSeriesDataModule():
         )
 
         return loader, sampler
+
+class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
+    
+    def __init__(
+            self,
+            src_directory: str = ".",
+            dst_directory: str = ".",
+            dataset_name: str = "dataset",
+            prefix: Optional[str] = None,
+            suffix: Optional[str] = None,
+            data_format: str = 'classic',
+            batch_size: int = 32,
+            drop_last: bool = False,
+            input_variables: Optional[Sequence] = None,
+            output_variables: Optional[Sequence] = None,
+            constants: Optional[DictConfig] = None,
+            scaling: Optional[DictConfig] = None,
+            splits: Optional[DictConfig] = None,
+            presteps: int = 0,
+            input_time_dim: int = 1,
+            output_time_dim: int = 1,
+            data_time_step: Union[int, str] = '3H',
+            time_step: Union[int, str] = '6H',
+            gap: Union[int, str, None] = None,
+            shuffle: bool = True,
+            add_insolation: bool = False,
+            cube_dim: int = 64,
+            num_workers: int = 4,
+            pin_memory: bool = True,
+            prebuilt_dataset: bool = True,
+            forecast_init_times: Optional[Sequence] = None
+    ):
+        """
+        Extension of TimeSeriesDataModule, designed for coupled models that take input from other 
+        earth system components. 
+
+        :param src_directory: directory containing data files per variable
+        :param dst_directory: directory containing joint data files
+        :param dataset_name: the name of the dataset
+        :param prefix: prefix appended to all data files
+        :param suffix: suffix appended to all data files
+        :param data_format: str indicating data schema.
+            'classic': use classic DLWP file types. Loads .nc files, assuming dimensions [sample, varlev, face, height,
+                width] and data variables 'predictors', 'lat', and 'lon'.
+            'zarr': use updated zarr file type. Assumes dimensions [time, face, height, width] and variable names
+                corresponding to the variables.
+        :param batch_size: size of batches to draw from data
+        :param drop_last: whether to drop the last batch if it is smaller than batch_size
+        :param input_variables: list of input variable names, to be found in data file name
+        :param output_variables: list of output variables names. If None, defaults to `input_variables`.
+        :param constants: dictionary with {key: value} corresponding to {constant_name: variable name in file}.
+        :param scaling: dictionary containing scaling parameters for data variables
+        :param splits: dictionary with train/validation/test set start/end dates. If not provided, loads the entire
+            data time series as the test set.
+        :param presteps: number of time steps to initialize recurrent hidden states
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param data_time_step: either integer hours or a str interpretable by pandas: time between steps in the
+            original data time series
+        :param time_step: either integer hours or a str interpretable by pandas: desired time between effective model
+            time steps
+        :param gap: either integer hours or a str interpretable by pandas: time step between the last input time and
+            the first output time. Defaults to `time_step`.
+        :param shuffle: option to shuffle the training data
+        :param add_insolation: option to add prescribed insolation as a decoder input feature
+        :param cube_dim: number of points on the side of a cube face. Not currently used.
+        :param num_workers: number of parallel data loading workers
+        :param pin_memory: enable pytorch's memory pinning for faster GPU I/O
+        :param prebuilt_dataset: Create a custom dataset for training. If False, the variables are gathered on the fly
+        :param forecast_init_times: a Sequence of pandas Timestamps dictating the specific initialization times
+            to produce inputs for. Note that
+                - this is only applied to the test dataloader
+                - providing this parameter configures the data loader to only produce this number of samples, and
+                    NOT produce any target array.
+        """
+        super().__init__(
+            src_directory,
+            dst_directory,
+            dataset_name,
+            prefix,
+            suffix,
+            data_format,
+            batch_size,
+            drop_last,
+            input_variables,
+            output_variables,
+            constants,
+            scaling,
+            splits,
+            presteps,
+            input_time_dim,
+            output_time_dim,
+            data_time_step,
+            time_step,
+            gap,
+            shuffle,
+            add_insolation,
+            cube_dim,
+            num_workers,
+            pin_memory,
+            prebuilt_dataset,
+            forecast_init_times,
+        )

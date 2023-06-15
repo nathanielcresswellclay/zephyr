@@ -472,3 +472,53 @@ class TimeSeriesDataset(Dataset):
         #print((inputs_result[1] != 0).any())
 
         return inputs_result, targets
+
+class CoupledTimeSeriesDataset(TimeSeriesDataset):
+    def __init__(
+            self,
+            dataset: xr.Dataset,
+            scaling: DictConfig,
+            input_time_dim: int = 1,
+            output_time_dim: int = 1,
+            data_time_step: Union[int, str] = '3H',
+            time_step: Union[int, str] = '6H',
+            gap: Union[int, str, None] = None,
+            batch_size: int = 32,
+            drop_last: bool = False,
+            add_insolation: bool = False,
+            forecast_init_times: Optional[Sequence] = None
+    ):
+        """
+        Dataset for coupling TimesSeriesDataset with external inputs from various earth system 
+        components
+
+        :param dataset: xarray Dataset produced by one of the `open_*` methods herein
+        :param scaling: dictionary containing scaling parameters for data variables
+        :param input_time_dim: number of time steps in the input array
+        :param output_time_dim: number of time steps in the output array
+        :param data_time_step: either integer hours or a str interpretable by pandas: time between steps in the
+            original data time series
+        :param time_step: either integer hours or a str interpretable by pandas: desired time between effective model
+            time steps
+        :param gap: either integer hours or a str interpretable by pandas: time step between the last input time and
+            the first output time. Defaults to `time_step`.
+        :param batch_size: batch size
+        :param drop_last: whether to drop the last batch if it is smaller than batch_size
+        :param add_insolation: option to add prescribed insolation as a decoder input feature
+        :param forecast_init_times: a Sequence of pandas Timestamps dictating the specific initialization times
+            to produce inputs for. Note that providing this parameter configures the data loader to only produce
+            this number of samples, and NOT produce any target array.
+        """
+        super().__init__(
+            dataset,
+            scaling,
+            input_time_dim,
+            output_time_dim,
+            data_time_step,
+            time_step,
+            gap,
+            batch_size,
+            drop_last,
+            add_insolation,
+            forecast_init_times,
+        )
