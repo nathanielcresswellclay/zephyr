@@ -69,7 +69,8 @@ class CubeSphereUNet(th.nn.Module):
         return max(self.output_time_dim // self.input_time_dim, 1)
 
     def _compute_input_channels(self) -> int:
-        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) + self.n_constants
+        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) \
++ self.n_constants + self.coupled_time_dim * self.coupled_channels
 
     def _compute_output_channels(self) -> int:
         return (1 if self.is_diagnostic else self.input_time_dim) * self.output_channels
@@ -142,7 +143,9 @@ class HEALPixUNet(th.nn.Module):
             output_time_dim: int,
             presteps: int = 0,
             enable_nhwc: bool = False,
-            enable_healpixpad: bool = False
+            enable_healpixpad: bool = False,
+            coupled_channels: int = 0,
+            coupled_time_dim: int = 0,
     ):
         """
         Deep Learning Weather Prediction (DLWP) UNet on the HEALPix mesh.
@@ -160,14 +163,18 @@ class HEALPixUNet(th.nn.Module):
         :param output_time_dim: number of time steps in the output array
         :param enable_nhwc: Model with [N, H, W, C] instead of [N, C, H, W] oder
         :param enable_healpixpad: Enable CUDA HEALPixPadding if installed
+        :param coupled_channels: number of coupled inputs 
+        :param coupled_time_dim: number of time steps used for coupled inputs 
         """
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.coupled_channels = coupled_channels 
         self.n_constants = n_constants
         self.decoder_input_channels = decoder_input_channels
         self.input_time_dim = input_time_dim
         self.output_time_dim = output_time_dim
+        self.coupled_time_dim = coupled_time_dim
         self.channel_dim = 2  # Now 2 with [B, F, C*T, H, W]. Was 1 in old data format with [B, T*C, F, H, W]
         self.enable_nhwc = enable_nhwc
         self.enable_healpixpad = enable_healpixpad
@@ -302,7 +309,9 @@ class HEALPixRecUNet(th.nn.Module):
             reset_cycle: str = "24H",
             presteps: int = 1,
             enable_nhwc: bool = False,
-            enable_healpixpad: bool = False
+            enable_healpixpad: bool = False,
+            coupled_channels: int = 0,
+            coupled_time_dim: int = 0,
     ):
         """
         Deep Learning Weather Prediction (DLWP) recurrent UNet model on the HEALPix mesh.
@@ -324,16 +333,20 @@ class HEALPixRecUNet(th.nn.Module):
         :param presteps: number of model steps to initialize recurrent states.
         :param enable_nhwc: Model with [N, H, W, C] instead of [N, C, H, W]
         :param enable_healpixpad: Enable CUDA HEALPixPadding if installed
+        :param coupled_channels: number of coupled inputs 
+        :param coupled_time_dim: number of time steps used for coupled inputs 
         """
         super().__init__()
         self.channel_dim = 2  # Now 2 with [B, F, T*C, H, W]. Was 1 in old data format with [B, T*C, F, H, W]
 
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.coupled_channels = coupled_channels 
         self.n_constants = n_constants
         self.decoder_input_channels = decoder_input_channels
         self.input_time_dim = input_time_dim
         self.output_time_dim = output_time_dim
+        self.coupled_time_dim = coupled_time_dim
         self.delta_t = int(pd.Timedelta(delta_time).total_seconds()//3600)
         self.reset_cycle = int(pd.Timedelta(reset_cycle).total_seconds()//3600)
         self.presteps = presteps
@@ -364,7 +377,8 @@ class HEALPixRecUNet(th.nn.Module):
         return max(self.output_time_dim // self.input_time_dim, 1)# + self.presteps
 
     def _compute_input_channels(self) -> int:
-        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) + self.n_constants
+        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) \
++ self.n_constants + self.coupled_time_dim * self.coupled_channels
 
     def _compute_output_channels(self) -> int:
         return (1 if self.is_diagnostic else self.input_time_dim) * self.output_channels
