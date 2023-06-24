@@ -374,7 +374,8 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             num_workers: int = 4,
             pin_memory: bool = True,
             prebuilt_dataset: bool = True,
-            forecast_init_times: Optional[Sequence] = None
+            forecast_init_times: Optional[Sequence] = None,
+            couplings: Sequence = None
     ):
         """
         Extension of TimeSeriesDataModule, designed for coupled models that take input from other 
@@ -418,7 +419,10 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                 - this is only applied to the test dataloader
                 - providing this parameter configures the data loader to only produce this number of samples, and
                     NOT produce any target array.
+        :param couplings: a Sequence of dictionaries that define the mechanics of couplings with other earth system
+            components 
         """
+        self.couplings = couplings
         super().__init__(
             src_directory,
             dst_directory,
@@ -447,3 +451,127 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             prebuilt_dataset,
             forecast_init_times,
         )
+
+    def setup(self) -> None:
+        if self.data_format == 'classic':
+            create_fn = create_time_series_dataset_classic
+            open_fn = open_time_series_dataset_classic_prebuilt if self.prebuilt_dataset else open_time_series_dataset_classic_on_the_fly
+        elif self.data_format == 'zarr':
+            create_fn = create_time_series_dataset_zarr
+            open_fn = open_time_series_dataset_zarr
+        else:
+            raise ValueError("'data_format' must be one of ['classic', 'zarr']")
+
+        if dist.is_initialized():
+
+            if self.prebuilt_dataset:
+                if dist.get_rank() == 0:
+                    create_fn(
+                        src_directory=self.src_directory,
+                        dst_directory=self.dst_directory,
+                        dataset_name=self.dataset_name,
+                        input_variables=self.input_variables,
+                        output_variables=self.output_variables,
+                        constants=self.constants,
+                        prefix=self.prefix,
+                        suffix=self.suffix,
+                        batch_size=self.dataset_batch_size,
+                        scaling=self.scaling,
+                        overwrite=False
+                    )
+
+                # wait for rank 0 to complete, because then the files are guaranteed to exist
+                dist.barrier(device_ids=[torch.cuda.current_device()])
+
+                dataset = open_fn(directory=self.dst_directory, dataset_name=self.dataset_name,
+                                  constants=self.constants is not None, batch_size=self.batch_size)
+            
+            else:
+                dataset = open_fn(input_variables=self.input_variables,
+                                  output_variables=self.output_variables,
+                                  directory=self.dst_directory,
+                                  constants=self.constants,
+                                  prefix=self.prefix,
+                                  batch_size=self.batch_size)
+        else:
+            if self.prebuilt_dataset:
+                create_fn(
+                    src_directory=self.src_directory,
+                    dst_directory=self.dst_directory,
+                    dataset_name=self.dataset_name,
+                    input_variables=self.input_variables,
+                    output_variables=self.output_variables,
+                    constants=self.constants,
+                    prefix=self.prefix,
+                    suffix=self.suffix,
+                    batch_size=self.dataset_batch_size,
+                    scaling=self.scaling,
+                    overwrite=False
+                )
+                
+                dataset = open_fn(directory=self.dst_directory, dataset_name=self.dataset_name,
+                                  constants=self.constants is not None, batch_size=self.batch_size)
+            else:
+                dataset = open_fn(input_variables=self.input_variables,
+                                  output_variables=self.output_variables,
+                                  directory=self.dst_directory,
+                                  constants=self.constants,
+                                  prefix=self.prefix,
+                                  batch_size=self.batch_size)
+            
+        if self.splits is not None and self.forecast_init_times is None:
+            self.train_dataset = CoupledTimeSeriesDataset(
+                dataset.sel(time=slice(self.splits['train_date_start'], self.splits['train_date_end'])),
+                scaling=self.scaling,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=self.drop_last,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings
+            )
+            self.val_dataset = CoupledTimeSeriesDataset(
+                dataset.sel(time=slice(self.splits['val_date_start'], self.splits['val_date_end'])),
+                scaling=self.scaling,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                #drop_last=False,
+                drop_last=self.drop_last,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings
+            )
+            self.test_dataset = CoupledTimeSeriesDataset(
+                dataset.sel(time=slice(self.splits['test_date_start'], self.splits['test_date_end'])),
+                scaling=self.scaling,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=False,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings
+            )
+        else:
+            self.test_dataset = CoupledTimeSeriesDataset(
+                dataset,
+                scaling=self.scaling,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=False,
+                add_insolation=self.add_insolation,
+                forecast_init_times=self.forecast_init_times,
+                couplings=self.couplings
+            )

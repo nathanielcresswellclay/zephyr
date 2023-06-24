@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from training.dlwp.utils import insolation
+from . import couplers 
 
 logger = logging.getLogger(__name__)
 
@@ -486,7 +487,8 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             batch_size: int = 32,
             drop_last: bool = False,
             add_insolation: bool = False,
-            forecast_init_times: Optional[Sequence] = None
+            forecast_init_times: Optional[Sequence] = None,
+            couplings: Sequence = []
     ):
         """
         Dataset for coupling TimesSeriesDataset with external inputs from various earth system 
@@ -508,17 +510,28 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
         :param forecast_init_times: a Sequence of pandas Timestamps dictating the specific initialization times
             to produce inputs for. Note that providing this parameter configures the data loader to only produce
             this number of samples, and NOT produce any target array.
+        :param couplings: a Sequence of dictionaries that define the mechanics of couplings with other earth system
+            components 
         """
         super().__init__(
-            dataset,
-            scaling,
-            input_time_dim,
-            output_time_dim,
-            data_time_step,
-            time_step,
-            gap,
-            batch_size,
-            drop_last,
-            add_insolation,
-            forecast_init_times,
+            dataset=dataset,
+            scaling=scaling,
+            input_time_dim=input_time_dim,
+            output_time_dim=output_time_dim,
+            data_time_step=data_time_step,
+            time_step=time_step,
+            gap=gap,
+            batch_size=batch_size,
+            drop_last=drop_last,
+            add_insolation=add_insolation,
+            forecast_init_times=forecast_init_times,
         )
+        self.couplings = [
+            getattr(couplers,c['coupler'])(
+                dataset,
+                **OmegaConf.to_object(DictConfig(c))['params']) for c in couplings
+        ]
+             
+        
+
+        
