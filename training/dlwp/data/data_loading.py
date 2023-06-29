@@ -526,11 +526,14 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             add_insolation=add_insolation,
             forecast_init_times=forecast_init_times,
         )
-        self.couplings = [
-            getattr(couplers,c['coupler'])(
-                dataset,
-                **OmegaConf.to_object(DictConfig(c))['params']) for c in couplings
-        ]
+        if couplings is not None:
+            self.couplings = [
+                getattr(couplers,c['coupler'])(
+                    dataset,
+                    **OmegaConf.to_object(DictConfig(c))['params']) for c in couplings
+            ]
+        else: 
+            self.couplings = None
              
         
 
