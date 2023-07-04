@@ -68,16 +68,19 @@ class Trainer():
 
         # set the other parameters
         self.optimizer = optimizer
+        # Set up criterion, pass metadata 
         self.criterion = criterion.to(device=self.device)
+        try:
+            self.criterion.setup(self)
+        except AttributeError:
+            raise NotImplementedError('Attribute error encountered in call to criterio.setup(). \
+Could be that criterion is not compatable with custom loss dlwp training. See \
+"training/dlwp/trainer/criterion.py" for proper criterion implementation examples.')
+
+        # opportunity for custom loss classes to get everything in order 
         self.lr_scheduler = lr_scheduler
         self.min_epochs = min_epochs
         self.max_epochs = max_epochs
-        #self.loss_weights = torch.tensor([1.0, 1.0, 1.0, 5.0, 1.0, 1.0, 0.25]).to(device=self.device)
-        #self.loss_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 0.1, 1.0, 1.0]).to(device=self.device)
-        self.loss_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to(device=self.device)
-
-        #self.loss_weights = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to(device=self.device)
-
 
         # add gradient scaler
         self.gscaler = amp.GradScaler(enabled=(self.amp_enable and self.amp_dtype == torch.float16))
@@ -115,10 +118,12 @@ class Trainer():
                         print(f"Capturing model for validation ...")
                     self._eval_capture(capture_stream)
 
+
         # Set up tensorboard summary_writer or try 'weights and biases'
         # Initialize tensorbaord to track scalars
         if (dist.is_initialized() and dist.get_rank() == 0) or not dist.is_initialized():
             self.writer = SummaryWriter(log_dir=self.output_dir_tb)
+        
             
     def _train_capture(self, capture_stream, inp_shapes, tar_shape, num_warmup_steps=20):
         # perform graph capture of the model
@@ -137,8 +142,7 @@ class Trainer():
                     self.static_gen_train = self.model.forward(self.static_inp)
 
 
-                    #self.static_loss_train = self.criterion(self.static_gen_train, self.static_tar)
-                    self.static_loss_train = self.compute_loss(self.static_gen_train, self.static_tar)
+                    self.static_loss_train = self.criterion(self.static_gen_train, self.static_tar)
 
                 # BW
                 self.gscaler.scale(self.static_loss_train).backward()
@@ -164,8 +168,7 @@ class Trainer():
                     self.static_gen_train = self.model.forward(self.static_inp)
 
 
-                    #self.static_loss_train = self.criterion(self.static_gen_train, self.static_tar)
-                    self.static_loss_train = self.compute_loss(self.static_gen_train, self.static_tar)
+                    self.static_loss_train = self.criterion(self.static_gen_train, self.static_tar)
 
                 # BW
                 self.gscaler.scale(self.static_loss_train).backward()
@@ -187,15 +190,11 @@ class Trainer():
                         self.static_gen_eval = self.model.forward(self.static_inp)
 
 
-                        #self.static_loss_eval = self.criterion(self.static_gen_eval, self.static_tar)
-                        self.static_loss_eval = self.compute_loss(self.static_gen_eval, self.static_tar)
-
-                        self.static_losses_eval = []
-                        for v_idx in range(len(self.output_variables)):
-                            #self.static_losses_eval.append(self.criterion(self.static_gen_eval[:, :, :, v_idx],
-                            #                                              self.static_tar[:, :, :, v_idx]))
-                            self.static_losses_eval.append(self.criterion(self.static_gen_eval[:, :, :, v_idx],
-                                                                          self.static_tar[:, :, :, v_idx])*self.loss_weights[v_idx])
+                        self.static_loss_eval = self.criterion(self.static_gen_eval, self.static_tar)
+                        # False flag for average channels ensures criterion will keep variable loss separated
+                        self.static_losses_eval = self.criterion(self.static_gen_eval,
+                                                                 self.static_tar,
+                                                                 average_channels=False) 
 
             # sync here
             capture_stream.synchronize()
@@ -216,22 +215,14 @@ class Trainer():
                         self.static_gen_eval = self.model.forward(self.static_inp)
 
 
-                        #self.static_loss_eval = self.criterion(self.static_gen_eval, self.static_tar)
-                        self.static_loss_eval = self.compute_loss(self.static_gen_eval, self.static_tar)
-
-                        self.static_losses_eval = []
-                        for v_idx in range(len(self.output_variables)):
-                            #self.static_losses_eval.append(self.criterion(self.static_gen_eval[:, :, :, v_idx],
-                            #                                              self.static_tar[:, :, :, v_idx]))
-                            self.static_losses_eval.append(self.criterion(self.static_gen_eval[:, :, :, v_idx],
-                                                                          self.static_tar[:, :, :, v_idx])*self.loss_weights[v_idx])
+                        self.static_loss_eval = self.criterion(self.static_gen_eval, self.static_tar)
+                        # False flag for average channels ensures criterion will keep variable loss separated
+                        self.static_losses_eval = self.criterion(self.static_gen_eval,
+                                                                 self.static_tar,
+                                                                 average_channels=False) 
 
         # wait for capture to finish
         torch.cuda.current_stream().wait_stream(capture_stream) 
-
-    def compute_loss(self, prediction, target):
-        d = ((target-prediction)**2).mean(dim=(0, 1, 2, 4, 5))*self.loss_weights
-        return torch.mean(d)
 
     def fit(
             self,
@@ -303,10 +294,10 @@ class Trainer():
                     if self.amp_enable:
                         with amp.autocast(enabled=self.amp_enable, dtype=self.amp_dtype):
                             output = self.model(inputs)
-                            train_loss = self.compute_loss(prediction=output, target=target)# self.criterion(output, target)
+                            train_loss = self.criterion(output, target)
                     else:
                         output = self.model(inputs)
-                        train_loss = self.compute_loss(prediction=output, target=target)
+                        train_loss = self.criterion(output, target)
                 
                     self.gscaler.scale(train_loss).backward()
                     #self.gscaler.scale(train_loss).backward(create_graph=True)
@@ -367,18 +358,17 @@ class Trainer():
                         if self.amp_enable:
                             with amp.autocast(enabled=self.amp_enable, dtype=self.amp_dtype):
                                 output = self.model(inputs)
-                                validation_stats[0] += self.compute_loss(prediction=output, target=target) * bsize
+                                validation_stats[0] += self.criterion(prediction=output, target=target) * bsize
+                                # save per variable loss
+                                eval_losses = self.criterion(output, target, average_channels=False)
                                 for v_idx, v_name in enumerate(self.output_variables):
-                                    validation_stats[1+v_idx] += self.criterion(
-                                        output[v_idx], target[v_idx]
-                                        )*self.loss_weights[v_idx] * bsize
+                                    validation_stats[1+v_idx] += eval_losses[v_idx] * bsize
                         else:
                             output = self.model(inputs)
-                            validation_stats[0] += self.compute_loss(prediction=output, target=target) * bsize
+                            validation_stats[0] += self.criterion(prediction=output, target=target) * bsize
+                            eval_losses = self.criterion(output, target, average_channels=False)
                             for v_idx, v_name in enumerate(self.output_variables):
-                                validation_stats[1+v_idx] += self.criterion(
-                                        output[v_idx], target[v_idx]
-                                        )*self.loss_weights[v_idx] * bsize
+                                validation_stats[1+v_idx] += eval_losses[v_idx] * bsize
 
                     pbar.set_postfix({"Loss": (validation_stats[0]/validation_stats[-1]).item()})
 
