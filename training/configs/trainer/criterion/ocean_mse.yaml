@@ -1,0 +1,2 @@
+_target_: training.dlwp.trainer.criterion.OceanMSE
+lsm_file: /home/disk/mercury/nacc/data/HPX32/hpx32_1979-2021_3h.zarr

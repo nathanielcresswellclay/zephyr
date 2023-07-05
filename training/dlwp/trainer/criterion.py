@@ -1,4 +1,6 @@
 import torch as th
+import numpy as np
+import xarray as xr 
 from typing import Any, Dict, Optional, Sequence, Union
 
 """
@@ -71,3 +73,45 @@ class WeightedMSE( th.nn.MSELoss ):
             return th.mean(d)
         else: 
             return d
+
+class OceanMSE( th.nn.MSELoss ):
+    """
+    Ocean MSE class offers impementaion for MSE loss weighted by a land-sea-mask field. 
+    """
+    def __init__(
+        self,
+        lsm_file: str,
+        open_dict: dict = {
+            'engine':'zarr'},
+        selection_dict: dict = {
+            'channel_c':'lsm'},
+    ):
+        """
+        """
+        super().__init__()
+        self.device = None
+        self.lsm_file = lsm_file
+        self.lsm_ds = None
+        self.open_dict = open_dict
+        self.selection_dict = selection_dict
+        self.lsm_tensor = None 
+        self.lsm_sum = None
+
+    def setup(self, trainer):
+        """
+        Nothing to implement here  
+        """
+        self.lsm_ds = xr.open_dataset(self.lsm_file,**self.open_dict).constants.sel(self.selection_dict)
+        # 1-lsm gives the percentage of pixel that has ocean 
+        self.lsm_tensor = 1 - th.tensor(np.expand_dims(self.lsm_ds.values,(0,2,3))).to(trainer.device)
+        self.lsm_sum = self.lsm_tensor.sum()
+
+    def forward(self, prediction, target, average_channels=True ):
+         
+        # average weighted 
+        ocean_err = (((target-prediction)**2)*self.lsm_tensor)/self.lsm_sum
+        ocean_mean_err = ocean_err.mean(dim=(0, 1, 2, 4, 5))
+        if average_channels: 
+            return th.mean(ocean_mean_err)
+        else: 
+            return ocean_mean_err
