@@ -451,6 +451,13 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             prebuilt_dataset,
             forecast_init_times,
         )
+  
+    def _get_coupled_vars(self):
+        
+        coupled_variables = []
+        for d in self.couplings:
+            coupled_variables = coupled_variables + d['params']['variables']
+        return coupled_variables
 
     def setup(self) -> None:
         if self.data_format == 'classic':
@@ -462,6 +469,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
         else:
             raise ValueError("'data_format' must be one of ['classic', 'zarr']")
 
+        coupled_variables = self._get_coupled_vars()
         if dist.is_initialized():
 
             if self.prebuilt_dataset:
@@ -470,7 +478,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                         src_directory=self.src_directory,
                         dst_directory=self.dst_directory,
                         dataset_name=self.dataset_name,
-                        input_variables=self.input_variables,
+                        input_variables=self.input_variables+coupled_variables,
                         output_variables=self.output_variables,
                         constants=self.constants,
                         prefix=self.prefix,
@@ -487,7 +495,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                                   constants=self.constants is not None, batch_size=self.batch_size)
             
             else:
-                dataset = open_fn(input_variables=self.input_variables,
+                dataset = open_fn(input_variables=self.input_variables+coupled_variables,
                                   output_variables=self.output_variables,
                                   directory=self.dst_directory,
                                   constants=self.constants,
@@ -499,7 +507,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     src_directory=self.src_directory,
                     dst_directory=self.dst_directory,
                     dataset_name=self.dataset_name,
-                    input_variables=self.input_variables,
+                    input_variables=self.input_variables+coupled_variables,
                     output_variables=self.output_variables,
                     constants=self.constants,
                     prefix=self.prefix,
@@ -512,7 +520,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                 dataset = open_fn(directory=self.dst_directory, dataset_name=self.dataset_name,
                                   constants=self.constants is not None, batch_size=self.batch_size)
             else:
-                dataset = open_fn(input_variables=self.input_variables,
+                dataset = open_fn(input_variables=self.input_variables+coupled_variables,
                                   output_variables=self.output_variables,
                                   directory=self.dst_directory,
                                   constants=self.constants,
@@ -523,6 +531,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             self.train_dataset = CoupledTimeSeriesDataset(
                 dataset.sel(time=slice(self.splits['train_date_start'], self.splits['train_date_end'])),
                 scaling=self.scaling,
+                input_variables=self.input_variables,
                 input_time_dim=self.input_time_dim,
                 output_time_dim=self.output_time_dim,
                 data_time_step=self.data_time_step,
@@ -536,6 +545,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             self.val_dataset = CoupledTimeSeriesDataset(
                 dataset.sel(time=slice(self.splits['val_date_start'], self.splits['val_date_end'])),
                 scaling=self.scaling,
+                input_variables=self.input_variables,
                 input_time_dim=self.input_time_dim,
                 output_time_dim=self.output_time_dim,
                 data_time_step=self.data_time_step,
@@ -550,6 +560,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             self.test_dataset = CoupledTimeSeriesDataset(
                 dataset.sel(time=slice(self.splits['test_date_start'], self.splits['test_date_end'])),
                 scaling=self.scaling,
+                input_variables=self.input_variables,
                 input_time_dim=self.input_time_dim,
                 output_time_dim=self.output_time_dim,
                 data_time_step=self.data_time_step,
@@ -564,6 +575,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             self.test_dataset = CoupledTimeSeriesDataset(
                 dataset,
                 scaling=self.scaling,
+                input_variables=self.input_variables,
                 input_time_dim=self.input_time_dim,
                 output_time_dim=self.output_time_dim,
                 data_time_step=self.data_time_step,

@@ -293,6 +293,7 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
 
                     if self.amp_enable:
                         with amp.autocast(enabled=self.amp_enable, dtype=self.amp_dtype):
+          
                             output = self.model(inputs)
                             train_loss = self.criterion(output, target)
                     else:
