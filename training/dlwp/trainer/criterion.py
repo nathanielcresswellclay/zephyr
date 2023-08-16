@@ -95,23 +95,31 @@ class OceanMSE( th.nn.MSELoss ):
         self.open_dict = open_dict
         self.selection_dict = selection_dict
         self.lsm_tensor = None 
+        self.lsm_sum_calculated = False
         self.lsm_sum = None
+        self.lsm_var_sum = None
 
     def setup(self, trainer):
         """
-        Nothing to implement here  
+        reshape lsm and put on device 
         """
         self.lsm_ds = xr.open_dataset(self.lsm_file,**self.open_dict).constants.sel(self.selection_dict)
         # 1-lsm gives the percentage of pixel that has ocean 
         self.lsm_tensor = 1 - th.tensor(np.expand_dims(self.lsm_ds.values,(0,2,3))).to(trainer.device)
-        self.lsm_sum = self.lsm_tensor.sum()
-
+        #self.lsm_sum = self.lsm_tensor.sum()
+        ## weighting sum that retains varible dimension for variable wise loss calculation
+        #self.lsm_var_sum = self.lsm_tensor.sum(dim=(0, 1, 2, 4, 5))
+        
     def forward(self, prediction, target, average_channels=True ):
          
+        if not self.lsm_sum_calculated:
+            self.lsm_sum = th.broadcast_to(self.lsm_tensor,target.shape).sum()
+            self.lsm_var_sum = th.broadcast_to(self.lsm_tensor,target.shape).sum(dim=(0,1,2,4,5))
+            self.lsm_sum_calculated = True
         # average weighted 
-        ocean_err = (((target-prediction)**2)*self.lsm_tensor)/self.lsm_sum
-        ocean_mean_err = ocean_err.mean(dim=(0, 1, 2, 4, 5))
+        ocean_err = (((target-prediction)**2)*self.lsm_tensor)
+        ocean_mean_err = ocean_err.sum(dim=(0, 1, 2, 4, 5))
         if average_channels: 
-            return th.mean(ocean_mean_err)
+            return th.sum(ocean_mean_err)/self.lsm_sum
         else: 
-            return ocean_mean_err
+            return ocean_mean_err/self.lsm_var_sum

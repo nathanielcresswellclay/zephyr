@@ -19,8 +19,8 @@ RUN_CMD="python -u scripts/train.py num_workers=8 port=29452 learning_rate=2e-4 
 # Run configuration
 NUM_GPU=2
 NUM_CPU=16
-GPU_NAME=V100
-DEVICE_NUMBERS="4,5"
+GPU_NAME=A100
+DEVICE_NUMBERS="0,1"
 
 # Command to run model on 
 srun -u --ntasks=${NUM_GPU} \
