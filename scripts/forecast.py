@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torchinfo import summary
 from dask.diagnostics import ProgressBar
 
-from dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
+from training.dlwp.utils import to_chunked_dataset, encode_variables_as_int, configure_logging, get_best_checkpoint_path
 
 logger = logging.getLogger(__name__)
 logging.getLogger('cfgrib').setLevel(logging.ERROR)
