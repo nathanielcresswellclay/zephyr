@@ -1,2 +1,2 @@
 _target_: training.dlwp.trainer.criterion.OceanMSE
-lsm_file: /home/disk/mercury/nacc/data/HPX32/hpx32_1979-2021_3h.zarr
+lsm_file: /home/disk/quicksilver2/nacc/Data/pipeline_dev/hpx32_1950-2022_3h_sst-only.zarr

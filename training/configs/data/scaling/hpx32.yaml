@@ -22,9 +22,14 @@ z250:
 z500:
   mean: 55625.9609375
   std: 2681.712890625
+# calculated with data from 1979-2018
 sst-ti:
   mean: 290.53864 
   std: 10.5835 
+# calculated with data from 1950-2022 
+sst:
+  mean: 290.64487
+  std: 10.5792
 tp6:
   mean: 0.
   std: 1.
