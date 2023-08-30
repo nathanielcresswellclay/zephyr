@@ -47,16 +47,16 @@ hpx_params = [
 zarr_params = {
     'src_directory' : '/home/quicksilver2/nacc/Data/pipeline_dev/',
     'dst_directory' : '/home/quicksilver2/nacc/Data/pipeline_dev/',
-    'dataset_name' : 'hpx32_1979-2021_3h_sst-only',
+    'dataset_name' : 'hpx32_1950-2021_3h_sst-only',
     'input_variables' : [
        'sst',],
     'output_variables' : [
         'sst',],
     'constants': {
-        'land_sea_mask' : 'lsm'},
+        'lsm':'lsm'},
     'prefix' : 'era5_1deg_3h_HPX32_1950-2022_',
     'batch_size': 32,
-    'scaling' : None,
+    'scaling' : OmegaConf.load('/home/disk/quicksilver/nacc/data_pipeline/zephyr/training/configs/data/scaling/hpx32.yaml'),
     'overwrite' : False,
 }
 # Retrive raw data
