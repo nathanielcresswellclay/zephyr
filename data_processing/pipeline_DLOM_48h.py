@@ -1,6 +1,7 @@
-from utils import era5_retrieval, data_imputation
+from utils import era5_retrieval, data_imputation, map2hpx
+from training.dlwp.data import data_loading as dl
 import numpy as np
-
+from omegaconf import OmegaConf
 
 era5_requests = [
     {'constant':True,
@@ -20,16 +21,54 @@ era5_requests = [
      'target_file':'/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc'},
 ]
 impute_params = {
-    'FILENAME':'/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc',
-    'VARIABLE':'sst',
-    'CHUNKS':{'time':10},
-    'IMPUTED_FILE':'/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc'
+    'filename':'/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc',
+    'variable':'sst',
+    'chunks':{'time':10000},
+    'imputed_file':'/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc'
 }
-
-
+hpx_params = [
+    {'file_name' : '/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc',
+     'target_variable_name' : 'sst', 
+     'file_variable_name' : 'sst', 
+     'prefix' : '/home/quicksilver2/nacc/Data/pipeline_dev/era5_1deg_3h_HPX32_1950-2022_',
+     'nside' : 32,
+     'order' : 'bilinear', 
+     'resolution_factor' : 1.0,
+     'visualize':False},
+    {'file_name' : '/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_lsm.nc',
+     'target_variable_name' : 'lsm', 
+     'file_variable_name' : 'lsm', 
+     'prefix' : '/home/quicksilver2/nacc/Data/pipeline_dev/era5_1deg_3h_HPX32_1950-2022_',
+     'nside' : 32,
+     'order' : 'bilinear', 
+     'resolution_factor' : 1.0,
+     'visualize':False},
+]
+zarr_params = {
+    'src_directory' : '/home/quicksilver2/nacc/Data/pipeline_dev/',
+    'dst_directory' : '/home/quicksilver2/nacc/Data/pipeline_dev/',
+    'dataset_name' : 'hpx32_1979-2021_3h_sst-only',
+    'input_variables' : [
+       'sst',],
+    'output_variables' : [
+        'sst',],
+    'constants': {
+        'land_sea_mask' : 'lsm'},
+    'prefix' : 'era5_1deg_3h_HPX32_1950-2022_',
+    'batch_size': 32,
+    'scaling' : None,
+    'overwrite' : False,
+}
 # Retrive raw data
 for request in era5_requests:
     era5_retrieval.main(request) 
 
 # Impute ocean data 
 data_imputation.triple_interp(impute_params)
+
+# Remap data to HPX mesh 
+for hpx_param in hpx_params:
+    map2hpx.main(hpx_param)
+
+# create zarr file for optimized training 
+dl.create_time_series_dataset_classic(**zarr_params)

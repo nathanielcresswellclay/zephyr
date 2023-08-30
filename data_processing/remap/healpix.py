@@ -340,6 +340,7 @@ class HEALPixRemap(_BaseRemap):
             nested=self.nested
             )
 
+       
         # Convert the 1D HEALPix array into an array of shape [faces=12, nside, nside]
         hpx3d = self.hpx1d2hpx3d(hpx1d=hpx1d)
         
