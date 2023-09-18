@@ -17,8 +17,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 # https://stackoverflow.com/questions/57354700/starmap-combined-with-tqdm/57364423#57364423
 from .istarmap import istarmap
 from data_processing.remap import CubeSphereRemap, HEALPixRemap
-from training.dlwp.model.losses import SSIM
-
 
 def load_da_parallel(
         ds_path: str,
@@ -943,7 +941,6 @@ class EvaluatorCS(EvaluatorBase):
                     print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
             else: 
                 print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
-                exit()
     
     def convert_to_ll(
             self,
@@ -1104,7 +1101,6 @@ class EvaluatorHPX(EvaluatorBase):
                     print(f"Initialized EvaluatorHPX around file {self.forecast_path} for {self.eval_variable}")
             else: 
                 print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
-                exit()
 
     def convert_to_ll(
             self,
