@@ -187,7 +187,10 @@ def inference(args: argparse.Namespace):
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
 
-    output_file = os.path.join(args.output_directory, f"forecast_{model_name}.{'zarr' if args.to_zarr else 'nc'}")
+    if hasattr(args,'output_filename'):
+        output_file = os.path.join(args.output_directory, f"{args.output_filename}.{'zarr' if args.to_zarr else 'nc'}")
+    else:
+        output_file = os.path.join(args.output_directory, f"forecast_{model_name}.{'zarr' if args.to_zarr else 'nc'}")
     logger.info(f"writing forecasts to {output_file}")
     if args.to_zarr:
         write_job = prediction_ds.to_zarr(output_file, compute=False)

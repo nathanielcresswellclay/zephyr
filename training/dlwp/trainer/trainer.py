@@ -305,7 +305,10 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
 
                 # Gradient clipping                
                 self.gscaler.unscale_(self.optimizer)
-                curr_lr = self.optimizer.param_groups[-1]["lr"] if self.lr_scheduler is None else self.lr_scheduler.get_last_lr()[0]
+                try:
+                    curr_lr = self.optimizer.param_groups[-1]["lr"] if self.lr_scheduler is None else self.lr_scheduler.get_last_lr()[0]
+                except AttributeError:  # try loop required since LearnOnPlateau has no "get_last_lr" attribute
+                    curr_lr = self.optimizer.param_groups[-1]["lr"] if self.lr_scheduler is None else self.optimizer.param_groups[0]['lr']
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), curr_lr)
                 
                 # Optimizer step
@@ -422,7 +425,11 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
                 thread.start()
 
             # Update learning rate
-            if self.lr_scheduler is not None: self.lr_scheduler.step()
+            try: 
+                if self.lr_scheduler is not None: self.lr_scheduler.step()
+            except TypeError: # Plateau Learning rate requires val loss 
+                if self.lr_scheduler is not None: self.lr_scheduler.step(validation_error)
+                 
 
             # Check early stopping criterium
             if self.early_stopping_patience is not None and epochs_since_improved >= self.early_stopping_patience:
