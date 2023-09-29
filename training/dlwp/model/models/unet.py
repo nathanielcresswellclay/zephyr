@@ -110,6 +110,7 @@ class CubeSphereUNet(th.nn.Module):
     def forward(self, inputs: Sequence, output_only_last=False) -> th.Tensor:
         # Reshape required for compatibility of CubedSphere model with modified dataloader
         # [B, F, T, C, H, W] -> [B, T, C, F, H, W]
+        
         inputs[0] = th.permute(inputs[0], dims=(0, 2, 3, 1, 4, 5))
         inputs[1] = th.permute(inputs[1], dims=(0, 2, 3, 1, 4, 5))
         inputs[2] = th.swapaxes(inputs[2], 0, 1)
