@@ -438,10 +438,11 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
                 break
 
         # Wrap up
-        if dist.get_rank() == 0:
-            try:
-                thread.join()
-            except UnboundLocalError:
-                pass
-            self.writer.flush()
-            self.writer.close()
+        if dist.is_initialized():
+            if dist.get_rank() == 0:
+                try:
+                    thread.join()
+                except UnboundLocalError:
+                    pass
+                self.writer.flush()
+                self.writer.close()
