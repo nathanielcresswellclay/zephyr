@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 
 from hydra import initialize, compose
+from omegaconf import OmegaConf, open_dict
 from hydra.utils import instantiate
 import dask.array
 import numpy as np
@@ -79,8 +80,15 @@ def inference(args: argparse.Namespace):
     cfg.num_workers = 0
     batch_size = 1
     cfg.data.prebuilt_dataset = True
-    cfg.model.enable_healpixpad = False
-    #exit()
+    # some models do not have custom cuda healpix padding flags in config, instead they assume default behavior of model class
+    # here we ensure that this default behaviopr is overridden fore forecasting 
+    if not hasattr(cfg.model,'enable_healpixpad'):
+        OmegaConf.set_struct(cfg,True)
+        with open_dict(cfg):
+            cfg.model.enable_healpixpad = False
+    else:
+        cfg.model.enable_healpixpad = False
+ 
 
 
     # Set up data module with some overrides for inference. Compute expected output time dimension.

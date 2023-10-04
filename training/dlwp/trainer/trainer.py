@@ -37,7 +37,8 @@ class Trainer():
             amp_mode: str = "none",
             graph_mode: str = "none",
             device: torch.device = torch.device("cpu"),
-            output_dir: str = "/outputs/"
+            output_dir: str = "/outputs/",
+            max_norm: float = None,
             ):
         """
         Constructor.
@@ -53,6 +54,7 @@ class Trainer():
         self.amp_dtype = torch.float16 if (amp_mode == "fp16") else torch.bfloat16
         self.output_variables = data_module.output_variables
         self.early_stopping_patience = early_stopping_patience
+        self.max_norm = max_norm
 
         self.model = model.to(device=self.device)
 
@@ -309,7 +311,11 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
                     curr_lr = self.optimizer.param_groups[-1]["lr"] if self.lr_scheduler is None else self.lr_scheduler.get_last_lr()[0]
                 except AttributeError:  # try loop required since LearnOnPlateau has no "get_last_lr" attribute
                     curr_lr = self.optimizer.param_groups[-1]["lr"] if self.lr_scheduler is None else self.optimizer.param_groups[0]['lr']
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), curr_lr)
+                # check that max norm was not given to trainer 
+                if self.max_norm is None:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), curr_lr)
+                else:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
                 
                 # Optimizer step
                 self.gscaler.step(self.optimizer)
