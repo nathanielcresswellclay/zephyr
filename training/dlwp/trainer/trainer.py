@@ -59,7 +59,6 @@ class Trainer():
         self.max_norm = max_norm
         self.keep_n_checkpoints = keep_n_checkpoints
         self.benchmark_checkpoints = benchmark_checkpoints
-
         self.model = model.to(device=self.device)
 
         if dist.is_initialized():
