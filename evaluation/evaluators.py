@@ -614,7 +614,7 @@ class EvaluatorBase(object):
             _, ax = plt.subplots(1, 1, figsize=(8, 4))
             ax.set_title(variable_metas[self.eval_variable]["vname_long"])
             ax.set_xlabel("Forecast day")
-            ax.set_ylabel(rf"ACC [{variable_metas[self.eval_variable]['unit']}]")
+            ax.set_ylabel(rf"ACC")
             ax.grid()
         x = self.get_forecast_hours()
         steps_per_day = 24//np.array((self.forecast_dt/3600)*1e-9, dtype=int)
