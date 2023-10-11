@@ -27,7 +27,8 @@ class HEALPixUNet3Plus(torch.nn.Module):
             nside: int = 32,
             n_coupled_inputs: int = 0,
             enable_healpixpad = True,
-            enable_nhwc = False 
+            enable_nhwc = False,
+            couplings: list = [],
     ):
         """
         Pytorch module implementation of the Deep Learning Weather Prediction (DLWP) U-net3+ model on the
@@ -47,11 +48,13 @@ class HEALPixUNet3Plus(torch.nn.Module):
         :param nside: number of points on the side of a HEALPix face
         :param n_coupled_inputs: Number of channels model will receive from another coupled model. Default 0 
             assumes no coupling and performs similarly to traditional HEALPixUnet 
+        :param couplings: sequence of dictionaries that describe coupling mechanisms
         """
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
         self.n_constants = n_constants
+        self.couplings = couplings
         self.decoder_input_channels = decoder_input_channels
         self.input_time_dim = input_time_dim
         self.output_time_dim = output_time_dim
@@ -73,6 +76,7 @@ class HEALPixUNet3Plus(torch.nn.Module):
             input_time_dim=self.input_time_dim,
             output_time_dim=self.output_time_dim,
             n_coupled_inputs=n_coupled_inputs,
+            couplings=self.couplings,
             enable_healpixpad=enable_healpixpad,
             enable_nhwc=enable_nhwc,
         )
@@ -93,12 +97,15 @@ class IterativeUnet(torch.nn.Module):
             input_time_dim: int,
             output_time_dim: int,
             n_coupled_inputs: int,
+            couplings: list,
             enable_healpixpad,
             enable_nhwc,
     ):
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.coupled_channels = self._compute_coupled_channels(couplings)
+        self.couplings = couplings
         self.n_constants = n_constants
         self.channel_dim = 2  # Now 2 with [B, F, C*T, H, W]. Was 1 in old data format with [B, T*C, F, H, W]
         self.n_coupled_inputs = n_coupled_inputs
@@ -126,7 +133,14 @@ class IterativeUnet(torch.nn.Module):
         return max(self.output_time_dim // self.input_time_dim, 1)
 
     def _compute_input_channels(self) -> int:
-        return self.input_time_dim * (self.input_channels + self.decoder_input_channels + self.n_coupled_inputs) + self.n_constants
+        return self.input_time_dim * (self.input_channels + self.decoder_input_channels) \
++ self.n_constants + self.coupled_channels
+
+    def _compute_coupled_channels(self, couplings):
+        c_channels = 0
+        for c in couplings:
+            c_channels += len(c['params']['variables'])*len(c['params']['input_times'])
+        return c_channels
 
     def _compute_output_channels(self) -> int:
         return (1 if self.is_diagnostic else self.input_time_dim) * self.output_channels
@@ -139,43 +153,70 @@ class IterativeUnet(torch.nn.Module):
         :param step: step number in the sequence of integration_steps
         :return: reshaped Tensor in expected shape for model encoder
         """
-        if not (self.n_constants > 0 or self.decoder_input_channels > 0):
-            return inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1)
-        if self.n_constants == 0:
+
+        if  len(self.couplings) > 0 :
+            if not (self.n_constants > 0 or self.decoder_input_channels > 0):
+               raise NotImplementedError('support for coupled models with no constant fields \
+or decoder inputs (TOA insolation) is not available at this time.') 
+            if self.n_constants == 0:
+               raise NotImplementedError('support for coupled models with no constant fields \
+or decoder inputs (TOA insolation) is not available at this time.') 
+            if self.decoder_input_channels == 0:
+               raise NotImplementedError('support for coupled models with no constant fields \
+is not available at this time.') 
+
             result = [
-                inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),  # inputs
-                inputs[1][:, :, slice(step*self.input_time_dim, (step+1)*self.input_time_dim), ...].flatten(self.channel_dim, self.channel_dim+1)  # DI
+                inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),
+                inputs[1][:, :, slice(step*self.input_time_dim, (step+1)*self.input_time_dim), ...].flatten(
+                    start_dim=self.channel_dim, end_dim=self.channel_dim+1
+                    ),  # DI
+                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1])),  # constants
+                inputs[3].permute(0,2,1,3,4) # coupled inputs
             ]
             res = torch.cat(result, dim=self.channel_dim)
 
-            # fold faces into batch dim
-            res = self.fold(res)
+        else:
+            if not (self.n_constants > 0 or self.decoder_input_channels > 0):
+                return inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1)
+
+            if self.n_constants == 0:
+                result = [
+                    inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),  # inputs
+                    inputs[1][:, :, slice(step*self.input_time_dim, (step+1)*self.input_time_dim), ...].flatten(
+                        self.channel_dim, self.channel_dim+1
+                        )  # DI
+                ]
+                res = torch.cat(result, dim=self.channel_dim)
+
+                # fold faces into batch dim
+                res = self.fold(res)
+                
+                return res
+
+            if self.decoder_input_channels == 0:
+                result = [
+                    inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),  # inputs
+                    inputs[1].expand(*tuple([inputs[0].shape[0]] + len(inputs[1].shape)*[-1]))  # constants
+                ]
+                res = torch.cat(result, dim=self.channel_dim)
+
+                # fold faces into batch dim
+                res = self.fold(res)
+                
+                return res
             
-            return res
-        if self.decoder_input_channels == 0:
             result = [
                 inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),  # inputs
-                inputs[1].expand(*tuple([inputs[0].shape[0]] + len(inputs[1].shape)*[-1]))  # constants
+                inputs[1][:, :, slice(step*self.input_time_dim, (step+1)*self.input_time_dim), ...].flatten(
+                    self.channel_dim, self.channel_dim+1
+                    ),  # DI
+                inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
                 #torch.tile(self.constants, (inputs[0].shape[0], 1, 1, 1, 1)) # constants
             ]
             res = torch.cat(result, dim=self.channel_dim)
 
-            # fold faces into batch dim
-            res = self.fold(res)
-            
-            return res
-        
-        result = [
-            inputs[0].flatten(start_dim=self.channel_dim, end_dim=self.channel_dim+1),  # inputs
-            inputs[1][:, :, slice(step*self.input_time_dim, (step+1)*self.input_time_dim), ...].flatten(self.channel_dim, self.channel_dim+1),  # DI
-            inputs[2].expand(*tuple([inputs[0].shape[0]] + len(inputs[2].shape) * [-1]))  # constants
-            #torch.tile(self.constants, (inputs[0].shape[0], 1, 1, 1, 1)) # constants
-        ]
-        res = torch.cat(result, dim=self.channel_dim)
-
         # fold faces into batch dim
         res = self.fold(res)
-        
         return res
 
     def _reshape_outputs(self, outputs: torch.Tensor) -> torch.Tensor:
@@ -193,9 +234,15 @@ class IterativeUnet(torch.nn.Module):
         outputs = []
         for step in range(self.integration_steps):
             if step == 0:
-                input_tensor = self._reshape_inputs(inputs, step)
+                if len(self.couplings) > 0:
+                    input_tensor = self._reshape_inputs(inputs[0:3] + [inputs[3][0]], step)
+                else:
+                    input_tensor = self._reshape_inputs(inputs, step)
             else:
-                input_tensor = self._reshape_inputs([outputs[-1]] + list(inputs[1:]), step)
+                if len(self.couplings) > 0:
+                    input_tensor = self._reshape_inputs(inputs[0:3] + [inputs[3][step]], step)
+                else:
+                    input_tensor = self._reshape_inputs([outputs[-1]] + list(inputs[1:]), step)
             hidden_states = self.encoder(input_tensor)
             outputs.append(self._reshape_outputs(self.decoder(hidden_states)))
         if output_only_last:
