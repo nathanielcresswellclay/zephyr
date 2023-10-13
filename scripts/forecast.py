@@ -63,14 +63,7 @@ def get_latest_version(directory):
 
 def inference(args: argparse.Namespace):
     forecast_dates = get_forecast_dates(args.forecast_init_start, args.forecast_init_end, args.freq)
-    #forecast_dates_cold = read_forecast_dates_from_file(path="/home/disk/brume/karlbam/upps/data/cold_spells_na_eu")
-    #forecast_dates_hot = read_forecast_dates_from_file(path="/home/disk/brume/karlbam/upps/data/hot_spells_na_eu")
-    #forecast_dates = np.concatenate([forecast_dates_cold, forecast_dates_hot])
     os.makedirs(args.output_directory, exist_ok=True)
-
-    #print(forecast_dates)
-    #exit()
-    #forecast_dates = forecast_dates[-6:]
 
     device = th.device(f'cuda:{args.gpu}' if th.cuda.is_available() else 'cpu')
     with initialize(config_path=os.path.join(args.hydra_path, '.hydra'), version_base=None):
@@ -98,6 +91,12 @@ def inference(args: argparse.Namespace):
         _convert_time_step(cfg.data.time_step)
     )
     output_time_dim = len(output_lead_times)
+    # if coupling is included, set up coupler for detached forecasting 
+    if hasattr(cfg.data.module,'couplings'):
+        nc = len(cfg.data.module.couplings)
+        for i in range(nc):
+            cfg.data.module.couplings[i]['params']['output_time_dim'] = len(output_lead_times) 
+    
     optional_kwargs = {k: v for k, v in {
         'dst_directory': args.data_directory,
         'prefix': args.data_prefix,
