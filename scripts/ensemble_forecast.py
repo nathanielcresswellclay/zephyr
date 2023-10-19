@@ -50,7 +50,7 @@ def ensemble_inference(models, params, ensemble_params, overwrite):
     
     # create ensemble 
     member_forecasts = [f"{m['output_directory']}/{m['output_filename']}.nc" for m in param_list]
-    ensemble_forecast = xr.open_mfdataset(member_forecasts, concat_dim='ensemble_member',combine='nested')
+    ensemble_forecast = xr.open_mfdataset(member_forecasts, concat_dim='ensemble_member',combine='nested',chunks=ensemble_params['chunks'])
     # write ensemble file
     if os.path.isfile(f"{ensemble_params['output_directory']}/{ensemble_params['output_filename']}.nc") and not overwrite:
         print(f"{ensemble_params['output_directory']}/{ensemble_params['output_filename']}.nc already exists")
@@ -96,6 +96,7 @@ FORECAST_PARAMS = {
 ENSEMBLE_PARAMS = {
     'output_directory' : '/home/disk/quicksilver/nacc/S2S',
     'output_filename': 'test_ensemble',
+    'chunks' : {'time':1},
 }
 OVERWRITE = False
 
