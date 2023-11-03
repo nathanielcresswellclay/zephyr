@@ -324,13 +324,14 @@ class DoubleConvNeXtBlock(th.nn.Module):
         convblock2.append(geometry_layer(
             layer='torch.nn.Conv2d',
             in_channels=int(latent_channels*upscale_factor),
-            out_channels=output_channels,
+            out_channels=out_channels,
             kernel_size=1,
             dilation=dilation,
             enable_nhwc=enable_nhwc,
             enable_healpixpad=enable_healpixpad
             ))
         if activation is not None: convblock2.append(activation)
+        self.convblock2 = th.nn.Sequential(*convblock2)
     
 
 
