@@ -588,7 +588,8 @@ class EvaluatorBase(object):
             self,
             data: np.array,
             ax: plt.axis = None,
-            model_name: str = None
+            model_name: str = None,
+            kwargs = {},
             ) -> plt.axis:
         """
         Plots the provided ACC data into an optionally given axis and returns it.
@@ -596,6 +597,7 @@ class EvaluatorBase(object):
         :param data: The ACC data time series
         :param ax: The matplotlib axis instance to plot the data into. If None, creates a new instance.
         :param model_name: The name of the model for the legend
+        :param kwargs: kwargs to pass to plot method 
         :return: The axis instance updated with the provided ACC data
         """
         if ax is None:
@@ -607,14 +609,15 @@ class EvaluatorBase(object):
         x = self.get_forecast_hours()
         steps_per_day = 24//np.array((self.forecast_dt/3600)*1e-9, dtype=int)
         if self.eval_variable == "t2m0": x = x[::steps_per_day]
-        ax.plot(x/24, data, label=model_name)
+        ax.plot(x/24, data, label=model_name,**kwargs)
         return ax
 
     def plot_rmse(
             self,
             data: np.array,
             ax: plt.axis = None,
-            model_name: str = None
+            model_name: str = None,
+            kwargs = {},
             ):
         """
         Plots the provided RMSE data into an optionally gived axis and returns it.
@@ -622,6 +625,7 @@ class EvaluatorBase(object):
         :param data: The RMSE data time series
         :param ax: The matplotlib axis instance to plot the data into. If None, creates a new instance.
         :param model_name: The name of the model for the legend
+        :param kwargs: kwargs to pass to plot method 
         :return: The axis instance updated with the provided RMSE data
         """
         if ax is None:
