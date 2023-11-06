@@ -57,7 +57,8 @@ class EvaluatorBase(object):
             "fname_era5": "geopotential_500",
             "vname_era5": "z",
             "vname_long": "Geopotential 500hPa",
-            "cmap": "viridis"
+            "cmap": "viridis",
+            "conversion":1/9.81,
             },
         "z1000": {
             "unit": r"$m^2 s^{-2}$",
@@ -150,7 +151,6 @@ class EvaluatorBase(object):
             forecast_path=None,
             eval_variable=None,
             verbose=True,
-            unit_conversion=None,
             on_latlon: bool = True,
             poolsize: int = 30
             ):
@@ -165,7 +165,6 @@ class EvaluatorBase(object):
                forecast will be created automatically. 
         :param eval_variable: string:
               variable used to calculate evaluation metrics      
-        :param unit_conversion: float: factor to convert units in forecast file 
         :param on_latlon: instructions whether to map forecast and predictor to LL
         :param poolsize: Number of processes used for parallelization
         """
@@ -193,7 +192,6 @@ class EvaluatorBase(object):
         self.num_forecast_steps = None
         self.forecast_steps = None
         self.forecast_dt = None
-        self.unit_conversion = unit_conversion
 
         # Initialize climatology attributes
         self.climatology_da = None
@@ -372,10 +370,7 @@ class EvaluatorBase(object):
         """
         return the RMSE of forecast against verification
         """
-        if self.unit_conversion is None: 
-            return np.sqrt(self.get_mse(mean=mean))
-        else: 
-            return self.unit_conversion*np.sqrt(self.get_mse(mean=mean))
+        return np.sqrt(self.get_mse(mean=mean))
 
     def get_ssim(
             self,
@@ -635,7 +630,8 @@ class EvaluatorBase(object):
             ax.set_xlabel("Forecast day")
             ax.set_ylabel(rf"RMSE [{variable_metas[self.eval_variable]['unit']}]")
             ax.grid()
-        ax.plot(self.get_forecast_hours()/24, data, label=model_name)
+        # apply conversion of convention is established in variable metas 
+        ax.plot(self.get_forecast_hours()/24,variable_metas[self.eval_variable]["conversion"]*data if "conversion" in variable_metas[self.eval_variable].keys() else data, label=model_name, **kwargs)
         return ax
 
     def plot_ssim(
@@ -790,7 +786,6 @@ class EvaluatorLL(EvaluatorBase):
             forecast_path: str = None,
             verification_path: str = None,
             eval_variable: str = None,
-            unit_conversion: float = None,
             on_latlon: bool = True,
             times: xr.DataArray = None,
             poolsize: int = 30,
@@ -809,14 +804,12 @@ class EvaluatorLL(EvaluatorBase):
                Path to the according ground truth file.
         :param eval_variable: string:
               variable used to calculate evaluation metrics      
-        :param unit_conversion: float: factor to convert units in forecast file 
         :param on_latlon: bool: instructions whether to map CS forecast and predictor to LL
         :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
         """
         super().__init__(
             forecast_path=forecast_path,
             eval_variable=eval_variable,
-            unit_conversion=unit_conversion,
             on_latlon=on_latlon,
             poolsize=poolsize,
             verbose=verbose,
@@ -863,7 +856,6 @@ class EvaluatorCS(EvaluatorBase):
             verification_path: str = None,
             eval_variable: str = None,
             remap_config: dict = None,
-            unit_conversion: float = None,
             on_latlon: bool = True,
             times: str = None,
             poolsize: int = 30,
@@ -885,8 +877,6 @@ class EvaluatorCS(EvaluatorBase):
         :param remap_config: dict:
                a dictionary that configures the remap of the forecast and verification
                from the CubeSphere
-        :param unit_conversion: float: factor to convert units in forecast file NOTE: This is different usage of unit 
-               conversion that other evaluators to maintain backwards compatability 
         :param on_latlon: bool: instructions whether to map CS forecast and predictor to LL
         :param times: A string indicating start and end date, e.g., "2016-01-01--2018-12-31"
         :param poolsize: Number of processes used for parallelization
@@ -894,7 +884,6 @@ class EvaluatorCS(EvaluatorBase):
         super().__init__(
             forecast_path=forecast_path,
             eval_variable=eval_variable,
-            unit_conversion=unit_conversion,
             on_latlon=on_latlon,
             poolsize=poolsize,
             verbose=verbose,
@@ -918,11 +907,7 @@ class EvaluatorCS(EvaluatorBase):
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
             if os.path.isfile(self.forecast_path):
-                if self.unit_conversion is None:
-                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
-                else: 
-                    if self.verbose: print(f"Converting values in forecast with by factor {self.unit_conversion}")
-                    self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]*self.unit_conversion
+                self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
                 if times is not None: self.forecast_da = self.forecast_da.sel({"time": times})
                 if self.on_latlon is True:
                     if self.verbose: print("Mapping forecast to LatLon mesh for evaluation")
@@ -983,17 +968,6 @@ class EvaluatorCS(EvaluatorBase):
 
         return ll_da
 
-    def get_rmse(
-            self,
-            mean=True
-            ):
-        """
-        return the RMSE of forecast against verification
-        
-        OVERRIDES DEFAULT get_rmse to handle unit conversion appropriate for CS forecast conventions 
-        """
-        return np.sqrt(self.get_mse(mean=mean))
-
     def faces2image(
         self,
         data: np.array
@@ -1032,7 +1006,6 @@ class EvaluatorHPX(EvaluatorBase):
             verification_path: str,
             eval_variable: str = "z500",
             remap_config: dict = None,
-            unit_conversion: float = None,
             on_latlon: bool = True,
             times: str = None,
             poolsize: int = 30,
@@ -1054,7 +1027,6 @@ class EvaluatorHPX(EvaluatorBase):
         :param remap_config: dict:
                a dictionary that configures the remap of the forecast and verification
                from the HEALPix
-        :param unit_conversion: float: factor to convert units in forecast file 
         :param on_latlon: bool: instructions whether to map HPX forecast and predictor to LL
         :param times: A string indicating start and end date, e.g., "2016-01-01--2018-12-31"
         :param poolsize: Number of processes used for parallelization
@@ -1062,7 +1034,6 @@ class EvaluatorHPX(EvaluatorBase):
         super().__init__(
             forecast_path=forecast_path,
             eval_variable=eval_variable,
-            unit_conversion=unit_conversion,
             on_latlon=on_latlon,
             poolsize=poolsize,
             verbose=verbose,
