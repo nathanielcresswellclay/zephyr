@@ -187,10 +187,10 @@ def inference(args: argparse.Namespace):
     if args.encode_int:
         prediction_ds = encode_variables_as_int(prediction_ds, compress=1)
 
-    if hasattr(args,'output_filename'):
-        output_file = os.path.join(args.output_directory, f"{args.output_filename}.{'zarr' if args.to_zarr else 'nc'}")
-    else:
+    if args.output_filename is None:
         output_file = os.path.join(args.output_directory, f"forecast_{model_name}.{'zarr' if args.to_zarr else 'nc'}")
+    else:
+        output_file = os.path.join(args.output_directory, f"{args.output_filename}.{'zarr' if args.to_zarr else 'nc'}")
     logger.info(f"writing forecasts to {output_file}")
     if args.to_zarr:
         write_job = prediction_ds.to_zarr(output_file, compute=False)
@@ -224,6 +224,8 @@ if __name__ == '__main__':
                         help="The batch size that is used to generate the forecast.")
     parser.add_argument('-o', '--output-directory', type=str, default='forecasts/',
                         help="Directory in which to save output forecast")
+    parser.add_argument('--output-filename', type=str, default=None,
+                        help="Name of file to hold forecast")
     parser.add_argument('--encode-int', action='store_true',
                         help="Encode data variables as int16 type (may not be compatible with tempest-remap)")
     parser.add_argument('--to-zarr', action='store_true',
