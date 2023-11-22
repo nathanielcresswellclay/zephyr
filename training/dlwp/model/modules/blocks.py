@@ -367,7 +367,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
             self.skip_module = geometry_layer(
                 layer='torch.nn.Conv2d',
                 in_channels=in_channels,
-                out_channels=int(latent_channels),
+                out_channels=out_channels,#int(latent_channels),
                 kernel_size=1,
                 enable_nhwc=enable_nhwc,
                 enable_healpixpad=enable_healpixpad
@@ -412,7 +412,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         convblock.append(geometry_layer(
             layer='torch.nn.Conv2d',
             in_channels=int(latent_channels),
-            out_channels=int(latent_channels),
+            out_channels=out_channels,#int(latent_channels),
             kernel_size=kernel_size,
             dilation=dilation,
             enable_nhwc=enable_nhwc,
@@ -424,8 +424,6 @@ class SymmetricConvNeXtBlock(th.nn.Module):
 
     def forward(self, x):
         # residual connection with reshaped inpute and output of conv block 
-        print('=======================================================================================')
-        print(self.convblock)
         return self.skip_module(x) + self.convblock(x)
 
 class ConvNeXtBlock(th.nn.Module):
