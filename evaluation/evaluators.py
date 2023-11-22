@@ -324,8 +324,11 @@ class EvaluatorBase(object):
             if climatology_path is None: 
                 self.generate_climatology(verification_path=self.verification_path)
             else:
-                vname = variable_metas[self.eval_variable]["vname_era5"] if self.on_latlon else self.eval_variable
-                self.climatology_da = xr.open_dataset(climatology_path)[vname]
+                if os.path.isfile(climatology_path):
+                    vname = variable_metas[self.eval_variable]["vname_era5"] if self.on_latlon else self.eval_variable
+                    self.climatology_da = xr.open_dataset(climatology_path)[vname]
+                else:
+                    self.generate_climatology(verification_path=self.verification_path,netcdf_dst_path=climatology_path)
         if self.on_latlon:
             axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
         else:
@@ -493,7 +496,7 @@ class EvaluatorBase(object):
         climatology = verif_ds.groupby('time.dayofyear').mean()
         # Create dataset containing the daily climatology for each time step of interest
         result = []
-        for step in self.forecast_steps:
+        for step in tqdm(self.forecast_steps):
             doy = [pd.Timestamp(t + np.array(step).astype('timedelta64[ns]')).dayofyear for t in valid_inits]
             result.append(climatology.sel(dayofyear=doy).rename({'dayofyear': 'time'}).assign_coords(time=valid_inits))
         result = xr.concat(result, dim='step').assign_coords(step=self.forecast_steps)
