@@ -53,32 +53,38 @@ class EvaluatorBase(object):
     global variable_metas
     variable_metas = {
         "z500": {
-            "unit": r"$m^2 s^{-2}$",
+            "unit": r"m",
             "fname_era5": "geopotential_500",
             "vname_era5": "z",
             "vname_long": "Geopotential 500hPa",
             "cmap": "viridis",
             "conversion":1/9.81,
+            "plot_label":r"Z$_{500}$",
             },
         "z1000": {
-            "unit": r"$m^2 s^{-2}$",
+            "unit": r"m",
             "fname_era5": "geopotential_1000",
             "vname_era5": "z",
             "vname_long": "Geopotential 1000hPa",
-            "cmap": "viridis"
+            "plot_label":r"Z$_{1000}$",
+            "conversion":1/9.81,
+            "cmap": "viridis",
             },
         "z250": {
-            "unit": r"$m^2 s^{-2}$",
+            "unit": r"m",
             "fname_era5": "geopotential_250",
             "vname_era5": "z",
             "vname_long": "Geopotential 250hPa",
-            "cmap": "viridis"
+            "plot_label":r"Z$_{250}$",
+            "conversion":1/9.81,
+            "cmap": "viridis",
             },
         "t850": {
             "unit": r"$K$",
             "fname_era5": "temperature_850",
             "vname_era5": "t",
             "vname_long": "Air temperature 850hPa",
+            "plot_label":r"T$_{850}$",
             "cmap": "coolwarm"
             },
         "t2m0": {
@@ -86,6 +92,7 @@ class EvaluatorBase(object):
             "fname_era5": "2m_temperature",
             "vname_era5": "t2m",
             "vname_long": "Air temperature 2m",
+            "plot_label":r"T$_{2m}$",
             "cmap": "coolwarm"
             },
         "tau300-700": {
