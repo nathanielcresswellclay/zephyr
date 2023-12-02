@@ -72,6 +72,7 @@ def inference(args: argparse.Namespace):
 
     cfg.num_workers = 0
     batch_size = 1
+    cfg.batch_size = batch_size
     cfg.data.prebuilt_dataset = True
     # some models do not have custom cuda healpix padding flags in config, instead they assume default behavior of model class
     # here we ensure that this default behaviopr is overridden fore forecasting 
@@ -102,12 +103,18 @@ def inference(args: argparse.Namespace):
         'prefix': args.data_prefix,
         'suffix': args.data_suffix
     }.items() if v is not None}
+    #print('========================================================================')
+    #import json  
+    #readable = json.dumps(OmegaConf.to_container(cfg),indent=4)
+    #print(readable)
+    #exit()
+    #print('========================================================================')
     data_module = instantiate(
         cfg.data.module,
         output_time_dim=output_time_dim,
         forecast_init_times=forecast_dates,
         shuffle=False,
-        batch_size=batch_size,
+#        batch_size=batch_size,
         **optional_kwargs
     )
     loader, _ = data_module.test_dataloader()
