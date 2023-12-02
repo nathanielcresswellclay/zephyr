@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Dict, Optional, Sequence, Union
+import time
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -123,10 +124,10 @@ class IterativeUnet(torch.nn.Module):
                              f"{self.output_time_dim} and {self.input_time_dim})")
 
         # Build the model layers
-        self.encoder = instantiate(encoder, input_channels=self._compute_input_channels())
+        self.encoder = instantiate(encoder, input_channels=self._compute_input_channels(), enable_healpixpad=enable_healpixpad)
         self.encoder_depth = len(self.encoder.n_channels)
         self.decoder = instantiate(decoder, input_channels=self.encoder.n_channels,
-                                   output_channels=self._compute_output_channels())
+                                   output_channels=self._compute_output_channels(),enable_healpixpad=enable_healpixpad)
 
     @property
     def integration_steps(self):
@@ -162,7 +163,7 @@ or decoder inputs (TOA insolation) is not available at this time.')
                raise NotImplementedError('support for coupled models with no constant fields \
 or decoder inputs (TOA insolation) is not available at this time.') 
             if self.decoder_input_channels == 0:
-               raise NotImplementedError('support for coupled models with no constant fields \
+               raise NotImplementedError('support for coupled models with no decoder input fields \
 is not available at this time.') 
 
             result = [
@@ -235,12 +236,12 @@ is not available at this time.')
         for step in range(self.integration_steps):
             if step == 0:
                 if len(self.couplings) > 0:
-                    input_tensor = self._reshape_inputs(inputs[0:3] + [inputs[3][0]], step)
+                    input_tensor = self._reshape_inputs(inputs[0:3] + [inputs[3][step]], step)
                 else:
                     input_tensor = self._reshape_inputs(inputs, step)
             else:
                 if len(self.couplings) > 0:
-                    input_tensor = self._reshape_inputs(inputs[0:3] + [inputs[3][step]], step)
+                    input_tensor = self._reshape_inputs([outputs[-1]] + list(inputs[1:3]) + [inputs[3][step]], step)
                 else:
                     input_tensor = self._reshape_inputs([outputs[-1]] + list(inputs[1:]), step)
             hidden_states = self.encoder(input_tensor)
