@@ -134,7 +134,6 @@ def create_time_series_dataset_classic(
         scaling: Optional[DictConfig] = None,
         overwrite: bool = False,
         ) -> xr.Dataset:
-
     file_exists = os.path.exists(os.path.join(dst_directory, dataset_name + ".zarr"))
 
     if file_exists and not overwrite:
@@ -226,6 +225,53 @@ def create_time_series_dataset_classic(
     
     return result
 
+class DoubleTimeSeriesDataset(Dataset):
+    def __init__(
+        self,
+        dataset: xr.Dataset,
+        ocean_dataset: xr.Dataset,
+        scaling: DictConfig,
+        input_time_dim: int = 1,
+        output_time_dim: int = 1,
+        time_step: Union[int, str] = '48H',
+        gap: Union[int, str, None] = None,
+        add_insolation: bool = False,
+        ocean_input_time_dim: int = 1,
+        ocean_output_time_dim: int = 1,
+        ocean_time_step: Union[int, str] = '48H',
+        ocean_gap: Union[int, str, None] = None,
+        ocean_add_insolation: bool = False,
+        data_time_step: Union[int, str] = '3H',
+        batch_size: int = 32,
+        drop_last: bool = False,
+        forecast_init_times: Optional[Sequence] = None,
+    ):
+
+        self.ocean_dataloader = TimeSeriesDataset(
+            ocean_dataset,
+            scaling,
+            ocean_input_time_dim,
+            ocean_output_time_dim,
+            data_time_step,
+            ocean_gap,
+            batch_size,
+            drop_last,
+            ocean_add_insolation,
+            forecast_init_times)
+        self.atmos_dataloader = TimeSeriesDataset(
+            atmos_dataset,
+            scaling,
+            atmos_input_time_dim,
+            atmos_output_time_dim,
+            data_time_step,
+            atmos_gap,
+            batch_size,
+            drop_last,
+            atmos_add_insolation,
+            forecast_init_times)
+        print('done!')
+        
+        
 
 class TimeSeriesDataset(Dataset):
     def __init__(
@@ -435,10 +481,8 @@ class TimeSeriesDataset(Dataset):
 
         # Iterate over valid sample windows
         for sample in range(this_batch):
-            #print("INPUT INDICES", self._input_indices[sample], input_array.shape, input_array[self._input_indices[sample]].shape)
             inputs[sample] = input_array[self._input_indices[sample]]
             if not self.forecast_mode:
-                #print("OUTPUT INDICES", self._output_indices[sample], target_array.shape, target_array[self._output_indices[sample]].shape)
                 targets[sample] = target_array[self._output_indices[sample]]
             if self.add_insolation:
                 decoder_inputs[sample] = sol if self.forecast_mode else \
@@ -469,8 +513,6 @@ class TimeSeriesDataset(Dataset):
         # we also need to transpose targets
         targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
 
-        #print((inputs_result[0] != 0).any())
-        #print((inputs_result[1] != 0).any())
 
         return inputs_result, targets
 
@@ -480,6 +522,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             dataset: xr.Dataset,
             scaling: DictConfig,
             input_variables: Sequence,
+            output_variables: Sequence = None,
             input_time_dim: int = 1,
             presteps: int = 0,
             output_time_dim: int = 1,
@@ -499,6 +542,8 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
         :param dataset: xarray Dataset produced by one of the `open_*` methods herein
         :param scaling: dictionary containing scaling parameters for data variables
         :param input_variables: a sequence of variables that will be ingested in to model 
+        :param output _variabes: a sequence of variables that are outputs of the model. None,
+            default to input variables  
         :param input_time_dim: number of time steps in the input array
         :param presteps: number of steps to initialize GRU 
         :param output_time_dim: number of time steps in the output array
@@ -518,6 +563,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             components 
         """
         self.input_variables = input_variables 
+        self.output_variables = input_variables if output_variables is None else output_variables 
         if couplings is not None:
             self.couplings = [
                 getattr(couplers,c['coupler'])(
@@ -543,6 +589,8 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
         # calculate static indices for coupling 
         for c in self.couplings:
             c.compute_coupled_indices(self.interval, self.data_time_step)
+        # keep track of integration steps 
+        self.integration_step = 1 # starts at 1 because first step is done by __getitem__
              
     def _get_scaling_da(self):
         scaling_df = pd.DataFrame.from_dict(self.scaling).T
@@ -593,10 +641,12 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
                                                    for c in self.couplings],
                                                    axis=2)
                                             
-
         input_array = (input_array - self.input_scaling['mean']) / self.input_scaling['std']
         if not self.forecast_mode:
-            target_array = self.ds['targets'].isel(**batch).to_numpy()
+            # BAD NEWS: Indexing the array as commented out below causes unexpected behavior in target creation.
+            #     leaving this in here as a warning
+            # target_array = self.ds['targets'].isel(**batch).to_numpy()
+            target_array = self.ds['targets'].sel(channel_out=self.output_variables).isel(**batch).to_numpy()
             target_array = (target_array - self.target_scaling['mean']) / self.target_scaling['std']
             #target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
             #                self.target_scaling['std']).compute()
@@ -617,16 +667,16 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
                            len(self.input_variables)) +
                           self.spatial_dims, dtype='float32')
         if not self.forecast_mode:
-            targets = np.empty((this_batch, self.output_time_dim, self.ds.dims['channel_out']) +
+            # DEBUGGING
+            #targets = np.empty((this_batch, self.output_time_dim, self.ds.dims['channel_out']) +
+            #                   self.spatial_dims, dtype='float32')
+            targets = np.empty((this_batch, self.output_time_dim, len(self.output_variables)) +
                                self.spatial_dims, dtype='float32')
 
         # Iterate over valid sample windows
         for sample in range(this_batch):
-            # print("INPUT INDICES", self._input_indices[sample], input_array.shape, input_array[self._input_indices[sample]].shape)
-          
             inputs[sample] = input_array[self._input_indices[sample]]
             if not self.forecast_mode:
-                #print("OUTPUT INDICES", self._output_indices[sample], target_array.shape, target_array[self._output_indices[sample]].shape)
                 targets[sample] = target_array[self._output_indices[sample]]
             if self.add_insolation:
                 decoder_inputs[sample] = sol if self.forecast_mode else \
@@ -655,14 +705,45 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
         # finish range
         torch.cuda.nvtx.range_pop()
 
-
         if self.forecast_mode:
             return inputs_result
 
         # we also need to transpose targets
         targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
 
-        #print((inputs_result[0] != 0).any())
-        #print((inputs_result[1] != 0).any())
-        
         return inputs_result, targets
+    
+    def next_integration(self, model_outputs, item, constants):
+       
+        inputs_result = []
+
+        # grab last few model outputs for re-initialization 
+        init_time_dim = len(self._input_indices[0])
+        prognostic_inputs = model_outputs[:,:,0-init_time_dim:]
+        inputs_result.append(prognostic_inputs)
+
+        # gather insolation inputs 
+        time_offset = self.time_step * (self.output_time_dim) * self.integration_step
+        sol = torch.tensor(insolation(self._get_forecast_sol_times(item)+time_offset, self.ds.lat.values, self.ds.lon.values)[:, None])
+        decoder_inputs = np.empty((1, self.input_time_dim + self.output_time_dim, 1) +
+                                  self.spatial_dims, dtype='float32')
+        decoder_inputs[0] = sol
+        inputs_result.append(torch.tensor(decoder_inputs.transpose(0,3,1,2,4,5)))
+        
+        # append constant fields 
+        inputs_result.append(constants) 
+        # increment integration step  
+        self.integration_step+=1 
+
+        # append couplings inputs 
+        if len(self.couplings) > 0:
+            integrated_couplings = np.concatenate([c.construct_integrated_couplings()\
+                                                    for c in self.couplings],
+                                                    axis=2)
+            inputs_result.append(torch.tensor(integrated_couplings))
+
+        # gather coupled_inputs 
+        return inputs_result
+        #return [torch.tensor(i) for i in inputs_result]
+   
+
