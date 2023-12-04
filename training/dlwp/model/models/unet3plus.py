@@ -30,7 +30,6 @@ class HEALPixUNet3Plus(torch.nn.Module):
             enable_healpixpad = True,
             enable_nhwc = False,
             couplings: list = [],
-            enable_nhwc = False 
     ):
         """
         Pytorch module implementation of the Deep Learning Weather Prediction (DLWP) U-net3+ model on the
