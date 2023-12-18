@@ -39,6 +39,8 @@ class Trainer():
             device: torch.device = torch.device("cpu"),
             output_dir: str = "/outputs/",
             max_norm: float = None,
+            keep_n_checkpoints: int = 5,
+            benchmark_checkpoints: list = [],
             ):
         """
         Constructor.
@@ -55,6 +57,8 @@ class Trainer():
         self.output_variables = data_module.output_variables
         self.early_stopping_patience = early_stopping_patience
         self.max_norm = max_norm
+        self.keep_n_checkpoints = keep_n_checkpoints
+        self.benchmark_checkpoints = benchmark_checkpoints
 
         self.model = model.to(device=self.device)
 
@@ -426,7 +430,10 @@ Could be that criterion is not compatable with custom loss dlwp training. See \
                           iteration,
                           validation_error,
                           epochs_since_improved,
-                          self.output_dir_tb, )
+                          self.output_dir_tb, 
+                          self.keep_n_checkpoints,
+                          self.benchmark_checkpoints,
+                          )
                     )
                 thread.start()
 

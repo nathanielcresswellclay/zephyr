@@ -194,7 +194,8 @@ def write_checkpoint(
         val_error: float,
         epochs_since_improved: int,
         dst_path: str,
-        keep_n_checkpoints: int = 5
+        keep_n_checkpoints: int = 5,
+        benchmark_checkpoints: list = [], 
     ):
     """
     Writes a checkpoint including model, optimizer, and scheduler state dictionaries along with current epoch,
@@ -209,11 +210,14 @@ def write_checkpoint(
     :param epochs_since_improved: The number of epochs since the validation error improved
     :param dst_path: Path where the checkpoint is written to
     :param keep_n_checkpoints: Number of best checkpoints that will be saved (worse checkpoints are overwritten)
+    :param benchmark_checkpoints: Checkpoints that will be kept, regardless of their validation error. Will not be used 
+           to calculate best n checkpoints
     """
     ckpt_dst_path = os.path.join(
         dst_path, "checkpoints",
         f"epoch={str(epoch).zfill(4)}-val_loss=" + "{:.4E}".format(val_error) + ".ckpt"
         )
+    benchmark_checkpoints = [f"epoch={str(bc).zfill(4)}" for bc in benchmark_checkpoints]
     root_path = os.path.dirname(ckpt_dst_path)
     os.makedirs(root_path, exist_ok=True)
     th.save(obj={"model_state_dict": model.state_dict(),
@@ -235,17 +239,24 @@ def write_checkpoint(
 
     # Only keep top n checkpoints
     ckpt_paths = np.array(glob.glob(root_path + "/epoch*.ckpt"))
-    if len(ckpt_paths) > keep_n_checkpoints + 1:
+    if len(ckpt_paths) > keep_n_checkpoints + 1 + len(benchmark_checkpoints):
         worst_path = ""
         worst_error = -np.infty
         for ckpt_path in ckpt_paths:
-            if "NAN" in ckpt_path:
-                os.remove(ckpt_path)
-                continue
-            # Read the scientific number from the checkpoint name and perform update if appropriate
-            curr_error = float(re.findall("-?\d*\.?\d+E[+-]?\d+", os.path.basename(ckpt_path))[0])
-            if curr_error > worst_error:
-                worst_path = ckpt_path
-                worst_error = curr_error
+            # check if checkpoint is a benchmark 
+            benchmark = False
+            for bc in benchmark_checkpoints:
+                if str(bc) in ckpt_path:
+                    print(f'found benchmark epoch {bc} checkpoint here: {ckpt_path}')
+                    benchmark = True
+            if not benchmark:
+                if "NAN" in ckpt_path:
+                    os.remove(ckpt_path)
+                    continue
+                # Read the scientific number from the checkpoint name and perform update if appropriate
+                curr_error = float(re.findall("-?\d*\.?\d+E[+-]?\d+", os.path.basename(ckpt_path))[0])
+                if curr_error > worst_error:
+                    worst_path = ckpt_path
+                    worst_error = curr_error
         os.remove(worst_path)
 
