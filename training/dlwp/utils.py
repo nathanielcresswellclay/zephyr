@@ -247,7 +247,6 @@ def write_checkpoint(
             benchmark = False
             for bc in benchmark_checkpoints:
                 if str(bc) in ckpt_path:
-                    print(f'found benchmark epoch {bc} checkpoint here: {ckpt_path}')
                     benchmark = True
             if not benchmark:
                 if "NAN" in ckpt_path:
