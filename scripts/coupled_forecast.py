@@ -215,6 +215,14 @@ def coupled_inference(args: argparse.Namespace):
     # buffers for updating inputs after each integration 
     atmos_constants = None 
     ocean_constants = None
+
+    # dummy models that produce ground truth values are used for debugging coupling. These models need information 
+    # about forecast dates and integration_time_dim. Set them here.
+    for model, data_module in [[atmos_model,atmos_data_module], [ocean_model, ocean_data_module]]: 
+        if getattr(model,'debugging_model', False):
+            model.set_output(forecast_dates, 
+                             forecast_integrations,
+                             data_module,)
    
     # loop through initializations and produce forecasts 
     for i,init in enumerate(pbar):
@@ -241,7 +249,6 @@ def coupled_inference(args: argparse.Namespace):
                 atmos_coupler.set_coupled_fields(ocean_output)
                 atmos_input = [k.to(device) for k in atmos_data_module.test_dataset.next_integration(
                                                          atmos_output, 
-                                                         item = i, 
                                                          constants = atmos_constants,
                                                      )]
                 with th.no_grad():
@@ -249,7 +256,6 @@ def coupled_inference(args: argparse.Namespace):
                 ocean_coupler.set_coupled_fields(atmos_output.cpu())
                 ocean_input = [k.to(device) for k in ocean_data_module.test_dataset.next_integration(
                                                          ocean_output, 
-                                                         item = i, 
                                                          constants = ocean_constants,
                                                      )]
                 with th.no_grad():
@@ -320,9 +326,9 @@ def coupled_inference(args: argparse.Namespace):
         ocean_prediction_ds = encode_variables_as_int(ocean_prediction_ds, compress=1)
         atmos_prediction_ds = encode_variables_as_int(atmos_prediction_ds, compress=1)
 
-    if hasattr(args,'ocean_output_filename'):
+    if getattr(args,'ocean_output_filename',None) is not None:
         ocean_output_file = os.path.join(args.output_directory, f"{args.ocean_output_filename}.{'zarr' if args.to_zarr else 'nc'}")
-    if hasattr(args,'atmos_output_filename'):
+    if getattr(args,'atmos_output_filename',None) is not None:
         atmos_output_file = os.path.join(args.output_directory, f"{args.atmos_output_filename}.{'zarr' if args.to_zarr else 'nc'}")
     else:
         ocean_output_file = os.path.join(args.output_directory, f"forecast_{ocean_model_name}.{'zarr' if args.to_zarr else 'nc'}")
@@ -368,6 +374,10 @@ if __name__ == '__main__':
                         help="The batch size that is used to generate the forecast.")
     parser.add_argument('-o', '--output-directory', type=str, default='forecasts/',
                         help="Directory in which to save output forecast")
+    parser.add_argument('--atmos-output-filename', type=str, default=None,
+                        help="Filename used to save atmos output forecast")
+    parser.add_argument('--ocean-output-filename', type=str, default=None,
+                        help="Filename used to save ocean output forecast")
     parser.add_argument('--encode-int', action='store_true',
                         help="Encode data variables as int16 type (may not be compatible with tempest-remap)")
     parser.add_argument('--to-zarr', action='store_true',
