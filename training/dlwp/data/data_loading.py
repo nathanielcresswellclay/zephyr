@@ -591,6 +591,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             c.compute_coupled_indices(self.interval, self.data_time_step)
         # keep track of integration steps 
         self.integration_step = 1 # starts at 1 because first step is done by __getitem__
+        self.curr_item = None # keeps track of current initialization 
              
     def _get_scaling_da(self):
         scaling_df = pd.DataFrame.from_dict(self.scaling).T
@@ -661,6 +662,10 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             sol = insolation(self._get_forecast_sol_times(item), self.ds.lat.values, self.ds.lon.values)[:, None]
             decoder_inputs = np.empty((this_batch, self.input_time_dim + self.output_time_dim, 1) +
                                       self.spatial_dims, dtype='float32')
+            # update current item and reset integration_step counter for further integrations which need 
+            # insolation but bypass this method see method "next_integration()" for details
+            self.curr_item = item
+            self.integration_step = 1
 
         # Get buffers for the batches, which we'll fill in iteratively.
         inputs = np.empty((this_batch, self.input_time_dim, 
@@ -713,7 +718,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
 
         return inputs_result, targets
     
-    def next_integration(self, model_outputs, item, constants):
+    def next_integration(self, model_outputs, constants):
        
         inputs_result = []
 
@@ -724,7 +729,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
 
         # gather insolation inputs 
         time_offset = self.time_step * (self.output_time_dim) * self.integration_step
-        sol = torch.tensor(insolation(self._get_forecast_sol_times(item)+time_offset, self.ds.lat.values, self.ds.lon.values)[:, None])
+        sol = torch.tensor(insolation(self._get_forecast_sol_times(self.curr_item)+time_offset, self.ds.lat.values, self.ds.lon.values)[:, None])
         decoder_inputs = np.empty((1, self.input_time_dim + self.output_time_dim, 1) +
                                   self.spatial_dims, dtype='float32')
         decoder_inputs[0] = sol
