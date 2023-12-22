@@ -1062,13 +1062,13 @@ class EvaluatorHPX(EvaluatorBase):
 
         if times is not None:
             t_start, t_stop = times.split("--")
-            times = slice(np.datetime64(t_start), np.datetime64(t_stop))
+            self.times = slice(np.datetime64(t_start), np.datetime64(t_stop))
 
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
             if os.path.isfile(self.forecast_path):
                 self.forecast_da = xr.open_dataset(forecast_path)[self.eval_variable]
-                if times is not None: self.forecast_da = self.forecast_da.sel({"time": times})
+                if self.times is not None: self.forecast_da = self.forecast_da.sel({"time": self.times})
                 if self.on_latlon is True:
                     if self.verbose: print('Mapping forecast to LatLon mesh for evaluation')
                     # Map to lat lon mesh
@@ -1077,7 +1077,7 @@ class EvaluatorHPX(EvaluatorBase):
                         verification_path=verification_path,
                         hpx_config=remap_config,
                         var_name=self.eval_variable,
-                        times=times,
+                        times=self.times,
                         ll_file=ll_file
                         )
                 else:
@@ -1114,33 +1114,39 @@ class EvaluatorHPX(EvaluatorBase):
              if provided and file already exists at location, loading file will be perferred to remap
         param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
         """
-        if hpx_config is None:
-            # Build a default HEALPix configuration
-            fc_ds = xr.open_dataset(forecast_path);
-            gt_ds = xr.open_dataset(verification_path)
-            hpx_config = {
-                "latitudes": gt_ds.dims["latitude"],
-                "longitudes": gt_ds.dims["longitude"],
-                "nside": fc_ds.dims["height"],
-                "order": "bilinear",
-                "resolution_factor": 1.0,
-                "prefix": "forecast",
-                "model_name": "model-name",
-                "poolsize": 20,
-                "to_netcdf": True,
-                "verbose": True
-            }
-            fc_ds.close()
-            gt_ds.close()
-        hpx_mapper = HEALPixRemap(
-            latitudes=hpx_config["latitudes"],
-            longitudes=hpx_config["longitudes"],
-            nside=hpx_config["nside"],
-            order=hpx_config["order"],
-            resolution_factor=hpx_config["resolution_factor"],
-            verbose=self.verbose
-            )
+
+        def get_hpx_remapper(forecast_ds_name,gt_dataset_name, hpx_config):
+
+            if hpx_config is None:
+                # Build a default HEALPix configuration
+                fc_ds = xr.open_dataset(forecast_path);
+                gt_ds = xr.open_dataset(verification_path)
+                hpx_config = {
+                    "latitudes": gt_ds.dims["latitude"],
+                    "longitudes": gt_ds.dims["longitude"],
+                    "nside": fc_ds.dims["height"],
+                    "order": "bilinear",
+                    "resolution_factor": 1.0,
+                    "prefix": "forecast",
+                    "model_name": "model-name",
+                    "poolsize": 20,
+                    "to_netcdf": True,
+                    "verbose": True
+                }
+                fc_ds.close()
+                gt_ds.close()
+            hpx_mapper = HEALPixRemap(
+                latitudes=hpx_config["latitudes"],
+                longitudes=hpx_config["longitudes"],
+                nside=hpx_config["nside"],
+                order=hpx_config["order"],
+                resolution_factor=hpx_config["resolution_factor"],
+                verbose=self.verbose
+                )
+            return hpx_mapper
+        
         if ll_file is None: 
+            hpx_mapper = get_hpx_remapper(forecast_path,verification_path, hpx_config)
             ll_ds = hpx_mapper.inverse_remap(
                 forecast_path=forecast_path,
                 verification_path=verification_path,
@@ -1149,7 +1155,7 @@ class EvaluatorHPX(EvaluatorBase):
                 vname=var_name,
                 poolsize=hpx_config["poolsize"],
                 to_netcdf=hpx_config["to_netcdf"],
-                times=times
+                times=self.times
                 )
         else:
             if os.path.isfile(ll_file):
@@ -1157,6 +1163,7 @@ class EvaluatorHPX(EvaluatorBase):
                     print(f'Openning lat-lon file from {ll_file}.')
                 ll_ds = xr.open_dataset(ll_file)
             else:
+                hpx_mapper = get_hpx_remapper(forecast_path,verification_path, hpx_config)
                 ll_ds = hpx_mapper.inverse_remap(
                     forecast_path=forecast_path,
                     verification_path=verification_path,
@@ -1165,12 +1172,12 @@ class EvaluatorHPX(EvaluatorBase):
                     vname=var_name,
                     poolsize=hpx_config["poolsize"],
                     to_netcdf=hpx_config["to_netcdf"],
-                    times=times
+                    times=self.times
                     )
                 if self.verbose:
                     print(f'Writing lat-lon file to {ll_file}.')
                 ll_ds.to_netcdf(ll_file)
-        return ll_ds[var_name]
+        return ll_ds[var_name].sel(time=self.times)
 
     def faces2image(
         self,
