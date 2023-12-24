@@ -363,14 +363,24 @@ class EvaluatorBase(object):
             # support latitude and longitude as well as lat and lon  
             forec = self.forecast_da.transpose("time", "step", "lat", "lon")
             verif = self.verification_da.transpose("time", "step", "lat", "lon")
-            axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
+            if isinstance(mean,bool):
+                axis_mean = (0, 1, 2, 3) if mean else (0, 2, 3)
+            elif isinstance(mean,tuple):
+                axis_mean = mean
+            else:
+                raise ValueError('mean must be bool or tuple')
         else:
             print('computing MSE on native...')
             weights = None  # No latitude weighting on the native mesh
             # Enforce aligning dimensions
             forec = self.forecast_da.transpose("time", "step", "face", "height", "width")
             verif = self.verification_da.transpose("time", "step", "face", "height", "width")
-            axis_mean = (0, 1, 2, 3, 4) if mean else (0, 2, 3, 4)
+            if isinstance(mean,bool):
+                axis_mean = (0, 1, 2, 3, 4) if mean else (0, 2, 3, 4)
+            elif isinstance(mean,tuple):
+                axis_mean = mean
+            else:
+                raise ValueError('mean must be bool or tuple')
         return self._compute_mse(forec=forec, verif=verif, axis_mean=axis_mean, weights=weights)
         
     def get_rmse(
@@ -1143,10 +1153,10 @@ class EvaluatorHPX(EvaluatorBase):
                 resolution_factor=hpx_config["resolution_factor"],
                 verbose=self.verbose
                 )
-            return hpx_mapper
+            return hpx_mapper, hpx_config
         
         if ll_file is None: 
-            hpx_mapper = get_hpx_remapper(forecast_path,verification_path, hpx_config)
+            hpx_mapper, hpx_config = get_hpx_remapper(forecast_path,verification_path, hpx_config)
             ll_ds = hpx_mapper.inverse_remap(
                 forecast_path=forecast_path,
                 verification_path=verification_path,
@@ -1163,7 +1173,7 @@ class EvaluatorHPX(EvaluatorBase):
                     print(f'Openning lat-lon file from {ll_file}.')
                 ll_ds = xr.open_dataset(ll_file)
             else:
-                hpx_mapper = get_hpx_remapper(forecast_path,verification_path, hpx_config)
+                hpx_mapper, hpx_config = get_hpx_remapper(forecast_path,verification_path, hpx_config)
                 ll_ds = hpx_mapper.inverse_remap(
                     forecast_path=forecast_path,
                     verification_path=verification_path,
