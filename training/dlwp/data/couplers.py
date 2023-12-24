@@ -140,7 +140,6 @@ class ConstantCoupler():
                current batch 
         :param bsize: int batch size 
         """
-
         if self.coupled_mode:
             return self.preset_coupled_fields
         else:

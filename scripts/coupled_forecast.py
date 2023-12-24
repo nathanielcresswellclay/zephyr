@@ -238,7 +238,6 @@ def coupled_inference(args: argparse.Namespace):
             if j==0:
                 # Get input field and forecast with atmos model
                 atmos_input = [k.to(device) for k in next(atmos_loader_iter)]
-
                 if atmos_constants is None:
                     atmos_constants = atmos_input[2]
                 with th.no_grad():
@@ -260,8 +259,7 @@ def coupled_inference(args: argparse.Namespace):
 
                 with th.no_grad():
                     atmos_output = atmos_model(atmos_input)
-
-                    
+       
                 ocean_coupler.set_coupled_fields(atmos_output.cpu())
                 ocean_input = [k.to(device) for k in ocean_data_module.test_dataset.next_integration(
                                                          ocean_output, 
