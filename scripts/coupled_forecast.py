@@ -230,14 +230,20 @@ def coupled_inference(args: argparse.Namespace):
         pbar.postfix = pd.Timestamp(forecast_dates[i]).strftime('init %Y-%m-%d %HZ')
         pbar.update()
         new_init = True
+        # reset_couplers for new initialization 
+        atmos_coupler.reset_coupler()
+        ocean_coupler.reset_coupler()
+
         for j in range(forecast_integrations):
             if j==0:
                 # Get input field and forecast with atmos model
                 atmos_input = [k.to(device) for k in next(atmos_loader_iter)]
+
                 if atmos_constants is None:
                     atmos_constants = atmos_input[2]
                 with th.no_grad():
                     atmos_output = atmos_model(atmos_input)
+                
                 # Repeat with ocean model, use atmos output to set forcing
                 ocean_coupler.set_coupled_fields(atmos_output.cpu())
                 ocean_input = [k.to(device) for k in next(ocean_loader_iter)]
@@ -251,8 +257,11 @@ def coupled_inference(args: argparse.Namespace):
                                                          atmos_output, 
                                                          constants = atmos_constants,
                                                      )]
+
                 with th.no_grad():
                     atmos_output = atmos_model(atmos_input)
+
+                    
                 ocean_coupler.set_coupled_fields(atmos_output.cpu())
                 ocean_input = [k.to(device) for k in ocean_data_module.test_dataset.next_integration(
                                                          ocean_output, 
@@ -266,10 +275,11 @@ def coupled_inference(args: argparse.Namespace):
                 ocean_prediction[i*batch_size:(i+1)*batch_size][:, 0] = ocean_input[0].permute(0, 2, 3, 1, 4, 5)[:, -1].cpu().numpy()
                 atmos_prediction[i*batch_size:(i+1)*batch_size][:, 0] = atmos_input[0].permute(0, 2, 3, 1, 4, 5)[:, -1].cpu().numpy()
                 new_init = False
+
             # fill rest of integration step with model output  
             ocean_prediction[i*batch_size:(i+1)*batch_size][:,slice(1+j*ocean_coupled_time_dim,(j+1)*ocean_coupled_time_dim+1)] = ocean_output.permute(0, 2, 3, 1, 4, 5).cpu().numpy()
             atmos_prediction[i*batch_size:(i+1)*batch_size][:,slice(1+j*atmos_coupled_time_dim,(j+1)*atmos_coupled_time_dim+1)] = atmos_output.permute(0, 2, 3, 1, 4, 5).cpu().numpy()
-          
+
     # Generate dataarray with coordinates
     ocean_meta_ds = ocean_data_module.test_dataset.ds
     atmos_meta_ds = atmos_data_module.test_dataset.ds

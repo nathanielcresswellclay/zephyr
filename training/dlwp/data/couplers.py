@@ -114,6 +114,12 @@ class ConstantCoupler():
                     channel_indices.append(i) 
         self.coupled_channel_indices = channel_indices
 
+    def reset_coupler(self):
+            
+            self.coupled_mode = False
+            self.integrated_couplings = None
+            self.preset_coupled_fields = None
+
     def set_coupled_fields(self, coupled_fields):
 
         # create buffer for coupling 
@@ -134,6 +140,7 @@ class ConstantCoupler():
                current batch 
         :param bsize: int batch size 
         """
+
         if self.coupled_mode:
             return self.preset_coupled_fields
         else:
@@ -313,7 +320,12 @@ class TrailingAverageCoupler():
              averaging_slices.append(slice(i*di,r))
         self.averaging_slices=averaging_slices
         
+    
+    def reset_coupler(self):
         
+        self.coupled_mode = False
+        self.integrated_couplings = None
+        self.preset_coupled_fields = None
 
     def set_coupled_fields(self, coupled_fields):
         
