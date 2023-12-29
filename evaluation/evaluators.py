@@ -1140,7 +1140,7 @@ class EvaluatorHPX(EvaluatorBase):
                     "prefix": "forecast",
                     "model_name": "model-name",
                     "poolsize": 20,
-                    "to_netcdf": True,
+                    "to_netcdf": False,
                     "verbose": True
                 }
                 fc_ds.close()
