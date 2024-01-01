@@ -24,4 +24,4 @@ jobs:
       run: |
         conda activate zephyr-1.0
         python -m unittest discover -p *_test.py
-```   shell: bash -l {0}
+      shell: bash -l {0}
