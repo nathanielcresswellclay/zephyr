@@ -339,18 +339,6 @@ update_scaling_params = {
     "overwrite": False,  # Whether to overwrite existing scaling parameters
     "chunks": None,  # Dictionary defining the chunk sizes for the data loading
 }
-
-
-# here we create the scale file if it doesn't already exits so it can be used to create the params for the
-# zarr file creation. The scale will be populated later with the proper values
-def create_yaml_if_not_exists(file_name):
-    if not os.path.exists(file_name):
-        with open(file_name, "w") as file:
-            yaml.dump({}, file)
-
-
-create_yaml_if_not_exists(update_scaling_params["scale_file"])
-
 zarr_params = {
     "src_directory": "/home/disk/rhodium/dlwp/data/HPX64/",
     "dst_directory": "/home/disk/rhodium/dlwp/data/HPX64/",
@@ -383,7 +371,7 @@ zarr_params = {
     "prefix": "era5_0.25deg_3h_HPX64_1950-2022_",
     "batch_size": 16,
     "scaling": OmegaConf.load(
-        "/home/disk/quicksilver/nacc/dlesm/zephyr/training/configs/data/scaling/hpx64.yaml"
+        update_scaling.create_yaml_if_not_exists(update_scaling_params["scale_file"])
     ),
     "overwrite": False,
 }

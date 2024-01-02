@@ -3,9 +3,29 @@ import xarray as xr
 from omegaconf import OmegaConf, open_dict
 import logging
 import json
+import os
+import yaml
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+def create_yaml_if_not_exists(file_name):
+    """
+    Creates a new YAML file if it doesn't already exist.
+
+    Parameters:
+    file_name (str): The path to the file to be created. This should include the full path along with the file name.
+
+    Returns:
+    None
+    """
+    # Check if the file already exists
+    if not os.path.exists(file_name):
+        # If the file doesn't exist, create it
+        with open(file_name, "w") as file:
+            # Write an empty dictionary to the file. This will be written as an empty YAML document.
+            yaml.dump({}, file)
+    return file_name
 
 EXAMPLE_PARAMS = {
     'scale_file' : '/home/disk/quicksilver/nacc/dlesm/zephyr/training/configs/data/scaling/hpx32.yaml',
