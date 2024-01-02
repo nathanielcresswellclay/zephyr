@@ -16,12 +16,12 @@ jobs:
     - name: Setup Miniconda
       uses: conda-incubator/setup-miniconda@v2
       with:
-        activate-environment: zephyr-1.0
-        environment-file: environments/zephyr-1.0.yml
+        activate-environment: zephyr-1.1
+        environment-file: environments/zephyr-1.1.yml
         auto-activate-base: false
 
     - name: Run tests
       run: |
-        conda activate zephyr-1.0
+        conda activate zephyr-1.1
         python -m unittest discover -p *_test.py
       shell: bash -l {0}
