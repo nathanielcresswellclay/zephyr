@@ -1,4 +1,4 @@
-from utils import era5_retrieval, data_imputation, map2hpx
+from utils import era5_retrieval, data_imputation, map2hpx, update_scaling
 from training.dlwp.data import data_loading as dl
 import numpy as np
 from omegaconf import OmegaConf
@@ -13,7 +13,7 @@ era5_requests = [
         "single_level_variable": True,
         "variable_name": "land_sea_mask",
         "grid": [1.0, 1.0],
-        "target_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_lsm.nc",
+        "target_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_lsm.nc",
     },
     # sst
     {
@@ -26,33 +26,33 @@ era5_requests = [
         "month": [month + 1 for month in range(0, 12)],
         "day": [d + 1 for d in range(0, 31)],
         "time": np.arange(0, 24, 3).tolist(),
-        "target_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc",
+        "target_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
     },
 ]
 # Parameters for imputing sst data over land
 impute_params = {
-    "filename": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc",
+    "filename": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
     "variable": "sst",
     "chunks": {"time": 10000},
-    "imputed_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc",
+    "imputed_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
 }
 # parameters for healpix remapping
 hpx_params = [
     {
-        "file_name": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc",
+        "file_name": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
         "target_variable_name": "sst",
         "file_variable_name": "sst",
-        "prefix": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1deg_3h_HPX32_1950-2022_",
+        "prefix": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_",
         "nside": 32,
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
     },
     {
-        "file_name": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_lsm.nc",
+        "file_name": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_lsm.nc",
         "target_variable_name": "lsm",
         "file_variable_name": "lsm",
-        "prefix": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1deg_3h_HPX32_1950-2022_",
+        "prefix": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_",
         "nside": 32,
         "order": "bilinear",
         "resolution_factor": 1.0,
@@ -74,8 +74,8 @@ update_scaling_params = {
 }
 # parameters used to write optimized zarr file
 zarr_params = {
-    "src_directory": "/home/quicksilver2/nacc/Data/pipeline_dev/",
-    "dst_directory": "/home/quicksilver2/nacc/Data/pipeline_dev/",
+    "src_directory": "/home/disk/rhodium/dlwp/data/HPX32/",
+    "dst_directory": "/home/disk/rhodium/dlwp/data/HPX32/",
     "dataset_name": "hpx32_1950-2022_3h_sst-only",
     "input_variables": [
         "sst",
