@@ -15,6 +15,7 @@ era5_requests = [
         "grid": [1.0, 1.0],
         "target_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_lsm.nc",
     },
+    # sst
     {
         "constant": False,
         "single_level_variable": True,
@@ -28,12 +29,14 @@ era5_requests = [
         "target_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc",
     },
 ]
+# Parameters for imputing sst data over land
 impute_params = {
     "filename": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst.nc",
     "variable": "sst",
     "chunks": {"time": 10000},
     "imputed_file": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc",
 }
+# parameters for healpix remapping
 hpx_params = [
     {
         "file_name": "/home/quicksilver2/nacc/Data/pipeline_dev/era5_1950-2022_3h_1deg_sst-ti.nc",
@@ -56,6 +59,20 @@ hpx_params = [
         "visualize": False,
     },
 ]
+# Define the parameters for updating the scaling parameters of various variables
+update_scaling_params = {
+    "scale_file": "/home/disk/quicksilver/nacc/dlesm/zephyr/training/configs/data/scaling/hpx32.yaml",
+    "variable_file_prefix": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_",
+    "variable_names": [
+        "sst",
+    ],
+    "selection_dict": {
+        "sample": slice(np.datetime64("1950-01-01"), np.datetime64("2022-12-31"))
+    },
+    "overwrite": False,
+    "chunks": None,
+}
+# parameters used to write optimized zarr file
 zarr_params = {
     "src_directory": "/home/quicksilver2/nacc/Data/pipeline_dev/",
     "dst_directory": "/home/quicksilver2/nacc/Data/pipeline_dev/",
@@ -70,7 +87,7 @@ zarr_params = {
     "prefix": "era5_1deg_3h_HPX32_1950-2022_",
     "batch_size": 16,
     "scaling": OmegaConf.load(
-        "/home/disk/quicksilver/nacc/data_pipeline/zephyr/training/configs/data/scaling/hpx32.yaml"
+        update_scaling.create_yaml_if_not_exists(update_scaling_params["scale_file"])
     ),
     "overwrite": False,
 }

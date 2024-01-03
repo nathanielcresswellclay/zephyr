@@ -1,4 +1,11 @@
-from utils import era5_retrieval, data_imputation, map2hpx, windspeed, trailing_average
+from utils import (
+    era5_retrieval,
+    data_imputation,
+    map2hpx,
+    windspeed,
+    trailing_average,
+    update_scaling,
+)
 from training.dlwp.data import data_loading as dl
 import numpy as np
 from omegaconf import OmegaConf
@@ -68,18 +75,21 @@ era5_requests = [
         "target_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
     },
 ]
+# Parameters for imputing sst data over land
 impute_params = {
     "filename": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
     "variable": "sst",
     "chunks": {"time": 10000},
     "imputed_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
 }
+# Parameters for calculating wind speed
 windspeed_params = {
     "u_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_u10m.nc",
     "v_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_v10m.nc",
     "target_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_windspeed.nc",
     "chunks": {"time": 10},
 }
+# parameters for healpix remapping
 hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
@@ -122,6 +132,7 @@ hpx_params = [
         "visualize": False,
     },
 ]
+# parameters for preparing coupled atmosphere training data
 trailing_average_params = [
     {
         "filename": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_ws10.nc",
@@ -144,10 +155,24 @@ trailing_average_params = [
         "load_first": True,
     },
 ]
+# Define the parameters for updating the scaling parameters of various variables
+update_scaling_params = {
+    "scale_file": "/home/disk/quicksilver/nacc/dlesm/zephyr/training/configs/data/scaling/hpx32.yaml",
+    "variable_file_prefix": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_",
+    "variable_names": [
+        "sst",
+    ],
+    "selection_dict": {
+        "sample": slice(np.datetime64("1950-01-01"), np.datetime64("2022-12-31"))
+    },
+    "overwrite": False,
+    "chunks": None,
+}
+# parameters used to write optimized zarr file
 zarr_params = {
     "src_directory": "/home/disk/rhodium/dlwp/data/HPX32/",
     "dst_directory": "/home/disk/rhodium/dlwp/data/HPX32/",
-    "dataset_name": "hpx32_1950-2022_3h_sst_coupled_test",
+    "dataset_name": "hpx32_1950-2022_3h_sst_coupled",
     "input_variables": [
         "sst",
         "ws10-48H",
@@ -160,14 +185,13 @@ zarr_params = {
     "prefix": "era5_1deg_3h_HPX32_1950-2022_",
     "batch_size": 16,
     "scaling": OmegaConf.load(
-        "/home/disk/quicksilver/nacc/dlesm/zephyr/training/configs/data/scaling/hpx32.yaml"
+        update_scaling.create_yaml_if_not_exists(update_scaling_params["scale_file"])
     ),
     "overwrite": False,
 }
 # Retrive raw data
 for request in era5_requests:
     era5_retrieval.main(request)
-
 # Impute ocean data
 data_imputation.triple_interp(impute_params)
 # windspeed calculation
