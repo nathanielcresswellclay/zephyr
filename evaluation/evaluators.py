@@ -21,7 +21,9 @@ from data_processing.remap import CubeSphereRemap, HEALPixRemap
 def load_da_parallel(
         ds_path: str,
         vname: str,
-        ds_sel_dict: dict
+        ds_sel_dict: dict,
+        time_dim_name: str = 'time',
+        defined_verif_only: bool = True,
         ) -> np.array:
     """
     Helper function to load entries specified by ds_sel_dict and vname from a .nc dataset in parallel
@@ -29,12 +31,32 @@ def load_da_parallel(
     :param ds_path: Path to the dataset
     :param vname: The variable to load from the dataset
     :param ds_sel_dict: A dictionary specifying what entries and dimensions are loaded
+    :param time_dim_name: The name of the time dimension in the dataset
+    :param defined_verif_only: Whether to only use the valid indices of the forecast file. If false, verification file will correspond to forecast file exactly.
     :return: A numpy array with the corresponding entries
     """
-    #tmp = xr.open_dataset(ds_path)[vname].sel({sel_dict})
-    #tmp = tmp.interp(latitude=self.forecast_da_LL.lat, longitude=self.forecast_da,
-    #                 method=interpolation_method).values.squeeze().values.squeeze()
-    return xr.open_dataset(ds_path)[vname].sel(ds_sel_dict).values.squeeze()
+
+    # routine to get all available times and populate rest with nans
+    if not defined_verif_only:
+        ds = xr.open_dataset(ds_path)[vname]
+        # Get the coordinates from the actual dataset
+        coords = {dim: ds.coords[dim] for dim in ds.dims if dim != time_dim_name}
+        coords[time_dim_name] = ds_sel_dict[time_dim_name]
+        # create corresponding dataset of NaNs 
+        full_ds = xr.Dataset({vname: (tuple(coords.keys()), np.full([len(coords[dim]) for dim in coords.keys()], np.nan))}, coords=coords)
+        # enforce proper order of dimensions
+        full_ds = full_ds.transpose(*ds.dims)
+        # find available times in original da 
+        available_times = []
+        for t in ds[time_dim_name].values: 
+            if t in full_ds[time_dim_name].values: available_times.append(t)
+        # create result array merged array if values can be filled in 
+        if len(available_times) == 0: result = full_ds[vname]
+        else: result = xr.merge([full_ds,xr.open_dataset(ds_path, chunks='auto')[vname].sel({time_dim_name:available_times})])
+        # return 
+        return result[vname].sel(ds_sel_dict).values.squeeze()
+    else:
+        return xr.open_dataset(ds_path)[vname].sel(ds_sel_dict).values.squeeze()
 
         
 class EvaluatorBase(object):
@@ -260,6 +282,7 @@ class EvaluatorBase(object):
             verification_path: str,
             level: int = None,
             interpolation_method: str = "linears",
+            defined_verif_only: bool = True,
             ) -> None:
         """
         Generate a verification data array from a given path.
@@ -267,6 +290,8 @@ class EvaluatorBase(object):
         :param verification_path: path and name of verification dataset in netcdf form
         :param level: level of evaluation variable
         :param interpolation method: method used to interpolate era5 data to same mesh as forecast
+        :param defined_verif_only: Whether to only use the valid indices of the forecast file. If false, verification file will correspond to forecast file exactly.
+            forecasted time not contained in verification will be reported as nans
         """
         # Assign file used in verification
         if self.verification_path is not None and self.verbose:
@@ -274,8 +299,12 @@ class EvaluatorBase(object):
         self.verification_path = verification_path
         
         # Find init dates that correspond to forecasted times sampled in the given predictor file
+        # unless instructed to load all forecasted init times
         time_dim_name = "time" if self.on_latlon else "sample"
-        valid_inits = self._find_valid_inits(xr.open_dataset(verification_path)[time_dim_name].values)
+        if defined_verif_only:
+            valid_inits = self._find_valid_inits(xr.open_dataset(verification_path)[time_dim_name].values)
+        else: 
+            valid_inits = self.forecast_da.time.values
 
         # Initialize array to hold verification data in forecast format
         verif = xr.zeros_like(self.forecast_da.sel(time=valid_inits))*np.nan
@@ -296,7 +325,7 @@ class EvaluatorBase(object):
             ds_sel_dict = {time_dim_name: samples}
             if self.is_latitude_evaluator: ds_sel_dict["latitude"] = self.forecast_da.coords["lat"]
             if level is not None: ds_sel_dict["level"] = level
-            arguments.append([verification_path, vname, ds_sel_dict])
+            arguments.append([verification_path, vname, ds_sel_dict, time_dim_name, defined_verif_only])
 
         # Populate verif array with samples from date array above, using parallel processes
         with multiprocessing.Pool(self.poolsize) as pool:
