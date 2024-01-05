@@ -29,7 +29,6 @@ def main(params):
     if result is None: 
         print(f'Processes exited successfully. Hooray!')
     print(ws)
-    exit()
 
 if __name__=="__main__":
 

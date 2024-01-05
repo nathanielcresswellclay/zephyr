@@ -49,7 +49,11 @@ def triple_interp(params):
         print(f'Target file {params["imputed_file"]} already exists. Aborting.')
         return
 
-    da = xr.open_dataset(params['filename'],chunks = params['chunks'])[params['variable']]
+    # Account for multiple file datasets 
+    if "*" in params['filename']:
+        da = xr.open_mfdataset(params['filename'],chunks = params['chunks'])[params['variable']]
+    else:
+        da = xr.open_dataset(params['filename'],chunks = params['chunks'])[params['variable']]
     # first go at interpolation along lines of latitude 
     da_interp = da.interpolate_na(dim='longitude',method='linear',use_coordinate=False)
     # offset and interpolate again, this allows interpolation where nans persist to boundary 
