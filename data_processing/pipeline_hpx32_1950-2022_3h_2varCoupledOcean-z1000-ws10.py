@@ -6,7 +6,7 @@ from utils import (
     trailing_average,
     update_scaling,
     duacs_processing,
-    write_zarr
+    write_zarr,
 )
 from training.dlwp.data import data_loading as dl
 import numpy as np
@@ -78,25 +78,25 @@ era5_requests = [
     },
 ]
 duacs_requests = {
-    'years': np.arange(1993,2023),
-    'output_directory': '/home/disk/rhodium/dlwp/data/DUACS/raw_data',
-    'overwrite': False,
+    "years": np.arange(1993, 2023),
+    "output_directory": "/home/disk/rhodium/dlwp/data/DUACS/raw_data",
+    "overwrite": False,
 }
 # Parameters for imputing sst, adt data over land
 impute_params = [
-    # sst 
+    # sst
     {
-    "filename": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
-    "variable": "sst",
-    "chunks": {"time": 10000},
-    "imputed_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
+        "filename": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst.nc",
+        "variable": "sst",
+        "chunks": {"time": 10000},
+        "imputed_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_sst-ti.nc",
     },
-    # adt 
+    # adt
     {
-    'filename':'/home/disk/rhodium/dlwp/data/DUACS/raw_data/dt_global_twosat_phy_l4_*_vDT2021.nc',
-    'variable':'adt',
-    'chunks':{'time':1},
-    'imputed_file':'/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.nc',
+        "filename": "/home/disk/rhodium/dlwp/data/DUACS/raw_data/dt_global_twosat_phy_l4_*_vDT2021.nc",
+        "variable": "adt",
+        "chunks": {"time": 1},
+        "imputed_file": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.nc",
     },
 ]
 # Parameters for calculating wind speed
@@ -105,6 +105,12 @@ windspeed_params = {
     "v_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_v10m.nc",
     "target_file": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_windspeed.nc",
     "chunks": {"time": 10},
+}
+# Parameters for fixing coordinates of DUACS data. This insures ERA5 data and DUACS data are on the same grid.
+duacs_fix_coords_params = {
+    "variable_name": "adt",
+    "input_file": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.nc",
+    "output_file": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.pp.nc",
 }
 # parameters for healpix remapping
 hpx_params = [
@@ -121,7 +127,7 @@ hpx_params = [
     },
     # adt
     {
-        "file_name": '/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.nc',
+        "file_name": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.pp.nc",
         "target_variable_name": "adt",
         "file_variable_name": "adt",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX32/duacs_1deg_3h_HPX32_1993-2022_",
@@ -216,7 +222,10 @@ update_scaling_params_duacs = {
     "chunks": None,
 }
 # make sure the scale file is the same for both era5 and duacs
-if update_scaling_params_era5["scale_file"] is not update_scaling_params_duacs["scale_file"]:
+if (
+    update_scaling_params_era5["scale_file"]
+    is not update_scaling_params_duacs["scale_file"]
+):
     raise ValueError("Scale file used for era5 and duacs must be the same.")
 # parameters used to write optimized zarr file
 # TODO allow for different prefix for each variable and subsetting
@@ -224,22 +233,26 @@ zarr_params = {
     "dst_directory": "/home/disk/rhodium/dlwp/data/HPX32/",
     "dataset_name": "hpx32_1993-2022_3h_2varCoupledOcean-z1000-ws10",
     "inputs": {
-        "sst" : "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_sst.nc",
-        "adt" : "/home/disk/rhodium/dlwp/data/HPX32/duacs_1deg_3h_HPX32_1993-2022_adt.nc",
-        "ws10-48H" : "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_ws10-48H.nc",
-        "z1000-48H" : "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_z1000-48H.nc",
+        "sst": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_sst.nc",
+        "adt": "/home/disk/rhodium/dlwp/data/HPX32/duacs_1deg_3h_HPX32_1993-2022_adt.nc",
+        "ws10-48H": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_ws10-48H.nc",
+        "z1000-48H": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_z1000-48H.nc",
     },
     "outputs": {
-        "sst" : "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_sst.nc",
+        "sst": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_sst.nc",
     },
-    "constants": {"lsm": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_lsm.nc"},
+    "constants": {
+        "lsm": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_lsm.nc"
+    },
     # "prefix": "era5_1deg_3h_HPX32_1950-2022_",
     "batch_size": 16,
-    "time_subset" : slice(np.datetime64("1993-01-01"), np.datetime64("2022-01-01")),
+    "time_subset": slice(np.datetime64("1993-01-01"), np.datetime64("2022-01-01")),
     "scaling": OmegaConf.load(
-        update_scaling.create_yaml_if_not_exists(update_scaling_params_era5["scale_file"])
+        update_scaling.create_yaml_if_not_exists(
+            update_scaling_params_era5["scale_file"]
+        )
     ),
-    "overwrite": True,
+    "overwrite": False,
 }
 # Retrive raw data
 for request in era5_requests:
@@ -249,6 +262,8 @@ duacs_processing.retrieve(duacs_requests)
 # Impute ocean data
 for impute_param in impute_params:
     data_imputation.triple_interp(impute_param)
+# fix coordinates of duacs data
+duacs_processing.fix_coords(duacs_fix_coords_params)
 # windspeed calculation
 windspeed.main(windspeed_params)
 # Remap data to HPX mesh

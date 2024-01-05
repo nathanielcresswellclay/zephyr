@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 
 # Define a dictionary to hold parameters for data processing
-EXAMPLE_PARAMS = {
+EXAMPLE_RETREIVAL_PARAMS = {
     # Create the range of yeeears to retrieve data for
     "years": np.arange(1993, 1995),
     # Specify the output directory where the retrieved data will be saved
@@ -13,6 +13,7 @@ EXAMPLE_PARAMS = {
     # Set the overwrite flag to False, indicating existing files should not be overwritten
     "overwrite": False,
 }
+
 
 def retrieve(params):
     print("Beginning to retrieve DUACS files...")
@@ -146,5 +147,36 @@ def retrieve(params):
     print("Finished retirving requested DUACS files.")
 
 
+import xarray as xr
+from dask.diagnostics import ProgressBar
+
+EXAMPLE_FIX_COORDS_PARAMS = {
+    "variable_name": "adt",
+    "input_file": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.nc",
+    "output_file": "/home/disk/rhodium/dlwp/data/DUACS/dt_global_twosat_phy_l4_imputed_1993-2022_vDT2021_adt.pp.nc",
+}
+
+
+def fix_coords(params):
+    # check that output file doesn't already exist
+    if os.path.exists(params["output_file"]):
+        print(
+            f'Output file {params["output_file"]} already exists. Skipping coordinate fixing...'
+        )
+        return
+
+    da = xr.open_dataset(params["input_file"], chunks={"time": 1})[
+        params["variable_name"]
+    ]
+    da = da.roll(longitude=int(len(da.longitude.values) / 2), roll_coords=True)
+    da = da.sortby("latitude", ascending=False)
+
+    with ProgressBar():
+        da.to_netcdf(params["output_file"])
+    print("...Finished!")
+    print(da)
+
+
 if __name__ == "__main__":
-    retrieve(EXAMPLE_PARAMS)
+    retrieve(EXAMPLE_RETREIVAL_PARAMS)
+    fix_coords(EXAMPLE_FIX_COORDS_PARAMS)
