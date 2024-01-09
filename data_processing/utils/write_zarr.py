@@ -20,6 +20,7 @@ def create_prebuilt_zarr(
         batch_size: int = 32,
         time_subset: slice = None,
         scaling: Optional[DictConfig] = None,
+        time_dim: Sequence = None,
         overwrite: bool = False,
         ) -> xr.Dataset:
     
@@ -79,6 +80,13 @@ def create_prebuilt_zarr(
         if variable in scaling and scaling[variable].get('log_epsilon', None) is not None:
             ds[variable] = np.log(ds[variable] + scaling[variable]['log_epsilon']) \
                            - np.log(scaling[variable]['log_epsilon'])
+            
+        # check time dimension is as desired and if not, resample 
+        if time_dim is not None:
+            if not np.array_equal(ds.time.values.astype('datetime64[h]'),time_dim.astype('datetime64[h]')):
+                print(f'Time dimension of {merged_dict[variable]} is {ds.time.values.astype("datetime64[h]")}')
+                print(f' This is different from the specified time_dim. Resampling using forward fill to {time_dim.astype("datetime64[h]")}')
+                ds = ds.reindex(time=time_dim, method='ffill')
         datasets.append(ds)
 
     # Merge datasets
@@ -104,14 +112,17 @@ def create_prebuilt_zarr(
         constants_ds = xr.merge(constants_ds, compat='override')
         constants_da = constants_ds.to_array('channel_c', name='constants').transpose(
             'channel_c', 'face', 'height', 'width')
+        result['constants'] = constants_da
 
     # writing out
     def write_zarr(data, path):
         #write_job = data.to_netcdf(path, compute=False)
-        write_job = data.to_zarr(path, compute=False)
+        write_job = data.to_zarr(path, encoding={'time':{'dtype':'float64'}}, compute=False) # we have to enforce float64 for time to avoid percision issues with zarr writing
         with ProgressBar():
             print(f"writing zarr dataset to {path}")
             write_job.compute()
+        print('Successfully wrote zarr:')
+        print(data)
 
     write_zarr(data=result, path=os.path.join(dst_directory, dataset_name + ".zarr"))
     

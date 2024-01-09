@@ -136,11 +136,15 @@ def create_time_series_dataset_classic(
         ) -> xr.Dataset:
     file_exists = os.path.exists(os.path.join(dst_directory, dataset_name + ".zarr"))
 
+    if not file_exists:
+        print(f'Could not find {os.path.join(dst_directory, dataset_name + ".zarr")}')
+
     if file_exists and not overwrite:
         logger.info("opening input datasets")
         return open_time_series_dataset_classic_prebuilt(directory=dst_directory, dataset_name=dataset_name,
                                                          constants=constants is not None)
     elif file_exists and overwrite:
+        print(f'Overwriting {os.path.join(st_directory, dataset_name)}.zarr')
         shutil.rmtree(os.path.join(dst_directory, dataset_name + ".zarr"))
 
     output_variables = output_variables or input_variables

@@ -240,6 +240,7 @@ zarr_params = {
     },
     "outputs": {
         "sst": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_sst.nc",
+        "adt": "/home/disk/rhodium/dlwp/data/HPX32/duacs_1deg_3h_HPX32_1993-2022_adt.nc",
     },
     "constants": {
         "lsm": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_lsm.nc"
@@ -252,7 +253,8 @@ zarr_params = {
             update_scaling_params_era5["scale_file"]
         )
     ),
-    "overwrite": False,
+    "time_dim" : np.arange(np.datetime64("1993-01-01"), np.datetime64("2022-01-01T01"), np.timedelta64(3, 'h')),
+    "overwrite": True,
 }
 # Retrive raw data
 for request in era5_requests:
