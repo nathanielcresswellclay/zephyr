@@ -11,8 +11,8 @@ EXAMPLE_PARAMS = {
     'single_level_variable':False,
     'variable_name':'temperature',
     'pressure_level':'1000',
-    'grid':[0.25,0.25],
-    'year': [y for y in range(1950,2023)],
+    'grid':[1.,1.],
+    'year': [y for y in range(1950,1951)],
     'month': [month+1 for month in range(0,12)],
     'day': [d+1 for d in range(0,31)],
     'time': np.arange(0,24,3).tolist(),
@@ -167,6 +167,14 @@ If issue arrises delete file and try again.')
                                         combine = 'nested',
                                         chunks=dict(time=8) if not params['constant'] else None,
                                         concat_dim='time' if not params['constant'] else None)
+        
+        # default encoding to int16 produces erroneous values for some variables
+        varnames = list(concated_ds.data_vars)
+        if len(varnames) > 1:
+            print(f'WARNING: more than one variable found in dataset. Using {varnames[0]}')
+        varname = varnames[0]
+        concated_ds[varname].encoding = {} 
+
         if params['constant']:
             concated_ds = concated_ds.squeeze()
         delayed_write = concated_ds.to_netcdf(params['target_file'],compute=False)

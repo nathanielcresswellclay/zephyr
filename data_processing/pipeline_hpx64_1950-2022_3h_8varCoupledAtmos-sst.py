@@ -203,7 +203,7 @@ tau_params = {
     "upper_file": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z300.nc",  # Path to the file containing the 300 hPa geopotential height data
     "lower_file": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z700.nc",  # Path to the file containing the 700 hPa geopotential height data
     "chunks": {"time": 128},  # Dictionary defining the chunk sizes for the data loading
-    "target_file": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_tau300-700.nc",  # Path to the file where the calculated tau data will be saved
+    "target_file": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_tau300-700.nc",  # Path to the file where the calculated tau data will be saved
 }
 # parameters for healpix remapping
 hpx_params = [
@@ -220,6 +220,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_topography.nc",
         "target_variable_name": "z",
+        "target_file_variable_name": "topography",
         "file_variable_name": "z",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
@@ -240,7 +241,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z1000.nc",
         "target_variable_name": "z1000",
-        "file_variable_name": "z1000",
+        "file_variable_name": "z",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
         "order": "bilinear",
@@ -250,7 +251,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_t2m.nc",
         "target_variable_name": "t2m",
-        "file_variable_name": "t2m0",
+        "file_variable_name": "t2m",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
         "order": "bilinear",
@@ -260,7 +261,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_t850.nc",
         "target_variable_name": "t850",
-        "file_variable_name": "t850",
+        "file_variable_name": "t",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
         "order": "bilinear",
@@ -270,7 +271,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z500.nc",
         "target_variable_name": "z500",
-        "file_variable_name": "z500",
+        "file_variable_name": "z",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
         "order": "bilinear",
@@ -300,7 +301,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z250.nc",
         "target_variable_name": "z250",
-        "file_variable_name": "z250",
+        "file_variable_name": "z",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX64/era5_0.25deg_3h_HPX64_1950-2022_",
         "nside": 64,
         "order": "bilinear",
@@ -386,7 +387,10 @@ for request in era5_requests:
 data_imputation.triple_interp(impute_params)
 # windspeed calculation
 windspeed.main(windspeed_params)
+# tau calculation
+tau_calculation.main(tau_params)
 # scale topography
+exit()
 scale_topography.main(scale_topography_params)
 # Remap data to HPX mesh
 for hpx_param in hpx_params:

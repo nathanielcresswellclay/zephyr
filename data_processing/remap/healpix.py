@@ -119,11 +119,14 @@ class HEALPixRemap(_BaseRemap):
             self,
             file_path: str,
             prefix: str = "era5_1deg_3h_HPX32_1979-2018_",
+            file_variable_name: str = "z500",
             target_variable_name: str = "z500",
+            target_file_variable_name: str = None,
             poolsize: int = 20,
             chunk_ds: bool = True,
             to_netcdf: bool = True,
             times: xr.DataArray = None,
+            output_file: str = None,
             ) -> xr.Dataset:
         """
         Takes a (preprocessed) LatLon dataset of shape [sample, varlev, lat, lon] and converts it into the HEALPix
@@ -131,37 +134,37 @@ class HEALPixRemap(_BaseRemap):
 
         :param file_path: The path to the dataset in LatLon convention
         :param prefix: First part of the target variable name
-        :param target_variable_name: The name for the target variable (following the prefix)
+        :param file_variable_name: The name of the variable in the file path
+        :param target_variable_name: The name for the variable within the file
+        :param target_file_variable_name: The name for the identifier in the file name, defaults to target_variable_name
         :param poolsize: Number of processes to be used for the parallel remapping
         :param chunk_ds: Whether to chunk the dataset (recommended for fast data loading)
         :param to_netcdf: Whether to write the dataset to file
         :param times: An xarray DataArray of desired time steps; or compatible, e.g., slice(start, stop)
+        :param output_file: Intended for use only in testing. Otherwise established conventions are used to determine the output file name.
         :return: The converted dataset in HPX convention
         """
 
         # Load .nc file in latlon format to extract latlon information and to initialize the remapper module
         ds_ll = xr.open_dataset(file_path)
-        if times is not None: ds_ll = ds_ll.sel({"sample": times})
+        if times is not None: ds_ll = ds_ll.sel({"time": times})
 
         # Determine whether a "constant" or "variable" is processed
-        const = False if "predictors" in list(ds_ll.keys()) else True
-        vname = list(ds_ll.keys())[0] if const else "predictors"
+        const = False if "time" in list(list(ds_ll.dims.keys())) else True
 
         # Set up coordinates and chunksizes for the HEALPix dataset
         coords = {}
         if not const:
-            coords["sample"] = ds_ll.coords["sample"]
-            coords["varlev"] = ds_ll.coords["varlev"]
+            coords["time"] = ds_ll.coords["time"]
         coords["face"] = np.array(range(12), dtype=np.int64)
         coords["height"] = np.array(range(self.nside), dtype=np.int64)
         coords["width"] = np.array(range(self.nside), dtype=np.int64)
         chunksizes = {coord: len(coords[coord]) for coord in coords}
 
+
         # Map the "constant" or "variable" to HEALPix
         if const:
-            data_hpx = self.ll2hpx(data=ds_ll.variables[vname].values)
-            ds_mean = ds_ll.variables[vname].mean()
-            ds_std = ds_ll.variables[vname].std()
+            data_hpx = self.ll2hpx(data=ds_ll.variables[file_variable_name].values)
         else:
             dims = [len(coords[coord]) for coord in coords]
 
@@ -169,23 +172,21 @@ class HEALPixRemap(_BaseRemap):
                 # Sequential sample mapping via for-loop
 
                 # Allocate a (huge) array to store all samples (time steps) of the projected data
-                data_hpx = np.zeros(dims, dtype=ds_ll.variables[vname])
+                data_hpx = np.zeros(dims, dtype=ds_ll.variables[file_variable_name])
 
                 # Iterate over all samples and levels, project them to HEALPix and store them in the predictors array
-                pbar = tqdm(ds_ll.coords["sample"], disable=not self.verbose)
-                for s_idx, sample in enumerate(pbar):
+                pbar = tqdm(ds_ll.coords["time"], disable=not self.verbose)
+                for s_idx, time in enumerate(pbar):
                     pbar.set_description("Remapping time steps")
-                    for l_idx, level in enumerate(ds_ll.coords["varlev"]):
-                        data_hpx[s_idx, l_idx] = self.ll2hpx(data=ds_ll.variables[vname][s_idx, l_idx].values)
+                    data_hpx[s_idx] = self.ll2hpx(data=ds_ll.variables[file_variable_name][s_idx].values)
             else:
-                # Parallel sample mapping with 'poolsize' processes
+                # Parallel time mapping with 'poolsize' processes
 
                 # Collect the arguments for each remapping call
                 arguments = []
                 if self.verbose: print("Preparing arguments for parallel remapping")
-                for s_idx in tqdm(range(ds_ll.dims["sample"]), disable=not self.verbose):
-                    for l_idx, level in enumerate(ds_ll.coords["varlev"]):
-                        arguments.append([self, ds_ll.variables[vname][s_idx, l_idx].values])
+                for s_idx in tqdm(range(ds_ll.dims["time"]), disable=not self.verbose):
+                    arguments.append([self, ds_ll.variables[file_variable_name][s_idx].values])
 
                 # Run the remapping in parallel
                 with multiprocessing.Pool(poolsize) as pool:
@@ -197,15 +198,8 @@ class HEALPixRemap(_BaseRemap):
                     pool.terminate()
                     pool.join()
                     
-                # If 'level=1', it will not be included as dimension and needs to be added manually
-                if data_hpx.shape != len(dims): data_hpx = np.expand_dims(data_hpx, axis=1)
-
-            ds_mean = ds_ll.variables["mean"]
-            ds_std = ds_ll.variables["std"]
-            
-            # Sample and level are loaded separately in DLWP
-            chunksizes["sample"] = 1
-            chunksizes["varlev"] = 1
+            # Time is loaded separately in DLWP
+            chunksizes["time"] = 1
 
         # Determine latitude and longitude values for the HEALPix faces
         hpxlon, hpxlat = hp.pix2ang(self.nside, range(self.npix), nest=True, lonlat=True)
@@ -218,17 +212,19 @@ class HEALPixRemap(_BaseRemap):
             data_vars={
                 "lat": (["face", "height", "width"], data_lat),
                 "lon": (["face", "height", "width"], data_lon),
-                vname: (list(coords.keys()), data_hpx),
-                "mean": ds_mean,
-                "std": ds_std
+                target_variable_name: (list(coords.keys()), data_hpx),
                 },
             attrs=ds_ll.attrs,
             )
         if chunk_ds:
             ds_hpx = to_chunked_dataset(ds=ds_hpx, chunking=chunksizes)
+        if output_file is None:
+            if target_file_variable_name is None:
+                target_file_variable_name = target_variable_name
+            output_file = prefix + target_file_variable_name + ".nc"
         if to_netcdf:
-            if self.verbose: print("Dataset sucessfully built. Writing data to file...")
-            ds_hpx.to_netcdf(prefix + target_variable_name + ".nc")
+            if self.verbose: print(f"Dataset sucessfully built. Writing data to file {output_file}")
+            ds_hpx.to_netcdf(output_file)
         #ds_hpx.to_zarr(prefix + target_variable_name + ".zarr", mode="w")
         return ds_hpx
 

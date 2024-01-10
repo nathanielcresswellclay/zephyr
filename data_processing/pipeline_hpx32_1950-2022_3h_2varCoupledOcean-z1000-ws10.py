@@ -151,7 +151,7 @@ hpx_params = [
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/1deg/era5_1950-2022_3h_1deg_z1000.nc",
         "target_variable_name": "z1000",
-        "file_variable_name": "z1000",
+        "file_variable_name": "z",
         "prefix": "/home/disk/rhodium/dlwp/data/HPX32/era5_1deg_3h_HPX32_1950-2022_",
         "nside": 32,
         "order": "bilinear",
