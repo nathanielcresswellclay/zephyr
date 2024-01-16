@@ -1,24 +1,37 @@
 
-# Atmospheric modeling using data-driven methods. Evolved from jweyn/DELUSioN.
+# Deep Learning Earth System Modelling 
 
-<short blurb here about the project statement, associated lab, authors and important contributors> 
-
-A link to our most recent paper can be found [here](link%20goes%20here) 
+This repository uses publically available datasets to create models of the Earth system. Our focus is on modular and customizable models that allow rapid development and experimentation. Compared to other popular models, ours are small. They can train in a few days on small ML clusters. 
 
 ## Getting set up
-### Package dependencies
-1. Python. 
-You should be running Python 3.8 <are other versions ok?> 
-2. < other dependencies here >.
 
-#### Connecting to our compute
-We have several machines and mostly use `rhodium` for our data pipelines, training, and evaluation of models. This machine has 4 GPUs...
-<more description of our nodes how to ssh to it, what compute each one has - I think 4 GPU right?>
-1. If you haven't already, ask for an account from David Warren <dwarren@uw.edu> to access Rhodium, Mercury and QuickSilver.
-2. Test your access by running the following command
-	 `ssh <your-username>@<machine_name>.atmos.washington.edu` (or setup ssh key?)
-	 Our machines names include: `brass`, `rhodium`, `gold`, `quicksilver`, and `mercury`.  Some of our members also have access to a Navy computer which is used to run training, called `<name>`
-3. Include a brief description of where to find key files ie. data and models.
+### Connecting to our compute
+Those in active collaboration with our group at the University of Washington are welcome to use our machines for analysis and training. If you do not plan to use our resources but would like to play around with our code, move onto instructions for setting up the virtual environment. We have 5 nodes dedicated to developing and testing deep learning earth system models.
+
+| Node Name  | CPU | Logical Cores | RAM | Swap | GPU | Intended Use |
+|------------|-----|---------------|-----|------|-----|--------------|
+| quicksilver| AMD EPYC 7742 64-Core Processor | 128 | 503Gi | 238Gi | 4x Nvidia A100 80Gi | training
+| mercury    | Intel(R) Xeon(R) Silver 4314 CPU @ 2.40GHz | 64 | 251Gi | 476Gi | 4x Nvidia A100 80Gi, 2x Nvidia Tesla V100 32Gi | training |
+| gold       | Intel(R) Xeon(R) W-2123 CPU @ 3.60GHz | 8 | 251Gi | 59Gi | 2x Nvidia Titan RTX 80Gi | training, forecasting |
+| rhodium    | Intel(R) Xeon(R) Silver 4208 CPU @ 2.10GHz | 32 | 376Gi | 355Gi | None | analysis, data processing |
+| brass      | Intel(R) Xeon(R) Gold 6226R CPU @ 2.90GHz | 64 | 187Gi | 178Gi | None | analysis, data processing
+
+
+1. Once you have an account, you can access our nodes via ssh. The command can be structured as follows: 
+```bash
+ssh <your-username>@<name-of-node>.atmos.washington.edu
+```
+
+### Creating the Virtual Environment
+1. Download an intialize Anaconda. Our code has been developed using [conda 4.13.0](https://anaconda.org/anaconda/conda/files?version=4.13.0)
+2. Clone **zephyr**. The repository includes a requiremnents file that enumerates all necessary packages. Checkout dlesm, the actively developed branch of zephyr.
+```bash
+git checkout dlesm
+```
+3. Create conda environment. Once conda has been initialized, make zephyr/ your working directory and use the following command to create the proper conda environment:  
+```bash
+conda env create -f environments/zephyr-1.1.yml
+```
 
 #### Running Training
 1. ssh to our virtual machine via the above.
