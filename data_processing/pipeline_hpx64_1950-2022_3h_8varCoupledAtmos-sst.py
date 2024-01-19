@@ -216,6 +216,7 @@ hpx_params = [
         "order": "bilinear",  # The interpolation method to use when regridding
         "resolution_factor": 1.0,  # The factor by which to change the resolution of the data
         "visualize": False,  # Whether to generate a visualization of the regridded data
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_topography.nc",
@@ -227,6 +228,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_windspeed.nc",
@@ -237,6 +239,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z1000.nc",
@@ -247,6 +250,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_t2m.nc",
@@ -257,6 +261,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_t850.nc",
@@ -267,6 +272,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z500.nc",
@@ -277,6 +283,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_tau300-700.nc",
@@ -287,6 +294,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_tcwv.nc",
@@ -297,6 +305,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_z250.nc",
@@ -307,6 +316,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
     {
         "file_name": "/home/disk/rhodium/dlwp/data/era5/0.25deg/era5_1950-2022_3h_0.25deg_sst-ti.nc",
@@ -317,6 +327,7 @@ hpx_params = [
         "order": "bilinear",
         "resolution_factor": 1.0,
         "visualize": False,
+        "poolsize": 30 # The number of parallel processes to use
     },
 ]
 # Define the parameters for updating the scaling parameters of various variables
