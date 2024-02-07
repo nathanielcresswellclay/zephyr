@@ -245,7 +245,12 @@ class EvaluatorBase(object):
         """
         if self.verbose: print(f"Generating climatology from {verification_path}")
 
-        if self.on_latlon:
+        if netcdf_dst_path is not None and os.path.isfile(netcdf_dst_path):
+            if self.verbose: print(f"Loading climatology from {netcdf_dst_path}")
+            climatology_ds = xr.open_dataarray(netcdf_dst_path)
+            self.climatology_da = climatology_ds
+            return
+        elif self.on_latlon:
             climatology_ds = self._daily_climo_time_series(
                 verif_ds=xr.open_dataset(verification_path)#.sel({"time": slice(self.forecast_da.time.values[0], self.forecast_da.time.values[-1] + self.forecast_da.step[-1])}),
                 )
@@ -604,8 +609,14 @@ class EvaluatorBase(object):
         :return: MSE over all variables, or numpy array of length forecast steps
         """
         if self.verbose: print("Computing MSE")
+        if self.eval_variable == 't2m0':
+            forec['f_day'] = xr.DataArray(np.floor((forec.step.values.astype('float')-1)/8.64e13 + 1), dims='step')
+            verif['f_day'] = xr.DataArray(np.floor((verif.step.values.astype('float')-1)/8.64e13 + 1), dims='step')
+            forec = forec.groupby('f_day').mean()
+            verif = verif.groupby('f_day').mean()
         if weights is None:
             return np.nanmean((verif.values-forec.sel(time=verif.time).values)**2., axis=axis_mean)
+        
         else:
             return np.nanmean((verif.values-forec.sel(time=verif.time).values)**2*weights, axis=axis_mean)
 
@@ -881,7 +892,7 @@ class EvaluatorLL(EvaluatorBase):
                 if self.verbose:
                     print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
             else: 
-                print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")        
+                raise ValueError(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")        
 
     def faces2image(
         self,
@@ -978,7 +989,7 @@ class EvaluatorCS(EvaluatorBase):
                 if self.verbose:
                     print(f"Initialized EvaluatorCS around file {self.forecast_path} for {self.eval_variable}")
             else: 
-                print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
+                raise ValueError(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
     
     def convert_to_ll(
             self,
@@ -1099,9 +1110,12 @@ class EvaluatorHPX(EvaluatorBase):
         if ".nc" not in verification_path:
             verification_path = verification_path + variable_metas[eval_variable]["fname_era5"] + ".nc"
 
+        
         if times is not None:
             t_start, t_stop = times.split("--")
             self.times = slice(np.datetime64(t_start), np.datetime64(t_stop))
+        else:
+            self.times = times
 
         # initialize forecast around file or configuration if given
         if self.forecast_path is not None:
@@ -1126,7 +1140,7 @@ class EvaluatorHPX(EvaluatorBase):
                 if self.verbose:
                     print(f"Initialized EvaluatorHPX around file {self.forecast_path} for {self.eval_variable}")
             else: 
-                print(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
+                raise ValueError(f"{forecast_path} was not found. Evaluator was not able to initialize around a forecast.")
 
     def convert_to_ll(
             self,
@@ -1158,7 +1172,7 @@ class EvaluatorHPX(EvaluatorBase):
 
             if hpx_config is None:
                 # Build a default HEALPix configuration
-                fc_ds = xr.open_dataset(forecast_path);
+                fc_ds = xr.open_dataset(forecast_path)
                 gt_ds = xr.open_dataset(verification_path)
                 hpx_config = {
                     "latitudes": gt_ds.dims["latitude"],
@@ -1168,12 +1182,13 @@ class EvaluatorHPX(EvaluatorBase):
                     "resolution_factor": 1.0,
                     "prefix": "forecast",
                     "model_name": "model-name",
-                    "poolsize": 20,
+                    "poolsize": self.poolsize,
                     "to_netcdf": False,
                     "verbose": True
                 }
                 fc_ds.close()
                 gt_ds.close()
+
             hpx_mapper = HEALPixRemap(
                 latitudes=hpx_config["latitudes"],
                 longitudes=hpx_config["longitudes"],
@@ -1211,12 +1226,11 @@ class EvaluatorHPX(EvaluatorBase):
                     vname=var_name,
                     poolsize=hpx_config["poolsize"],
                     to_netcdf=hpx_config["to_netcdf"],
-                    times=self.times
                     )
                 if self.verbose:
                     print(f'Writing lat-lon file to {ll_file}.')
                 ll_ds.to_netcdf(ll_file)
-        return ll_ds[var_name].sel(time=self.times)
+        return ll_ds[var_name].sel(time=self.times) if self.times is not None else ll_ds[var_name]
 
     def faces2image(
         self,
