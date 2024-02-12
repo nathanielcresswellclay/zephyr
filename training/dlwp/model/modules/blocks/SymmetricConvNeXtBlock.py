@@ -30,7 +30,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
             self.skip_module = lambda x: x  # Identity-function required in forward pass
         else:
             self.skip_module = geometry_layer(
-                layer='torch.nn.Conv2d',
+                layer=th.nn.Conv2d,
                 in_channels=in_channels,
                 out_channels=out_channels,#int(latent_channels),
                 kernel_size=1,
@@ -42,7 +42,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         convblock = []
         # 3x3 convolution establishing latent channels channels
         convblock.append(geometry_layer(
-            layer='torch.nn.Conv2d',
+            layer=th.nn.Conv2d,
             in_channels=in_channels,
             out_channels=int(latent_channels),
             kernel_size=kernel_size,
@@ -53,7 +53,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         if activation is not None: convblock.append(activation)
         # 1x1 convolution establishing increased channels
         convblock.append(geometry_layer(
-            layer='torch.nn.Conv2d',
+            layer=th.nn.Conv2d,
             in_channels=int(latent_channels),
             out_channels=int(latent_channels*upscale_factor),
             kernel_size=1,
@@ -64,7 +64,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         if activation is not None: convblock.append(activation)
         # 1x1 convolution returning to latent channels
         convblock.append(geometry_layer(
-            layer='torch.nn.Conv2d',
+            layer=th.nn.Conv2d,
             in_channels=int(latent_channels*upscale_factor),
             out_channels=int(latent_channels),
             kernel_size=1,
@@ -75,7 +75,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         if activation is not None: convblock.append(activation)
         # 3x3 convolution from latent channels to latent channels
         convblock.append(geometry_layer(
-            layer='torch.nn.Conv2d',
+            layer=th.nn.Conv2d,
             in_channels=int(latent_channels),
             out_channels=out_channels,#int(latent_channels),
             kernel_size=kernel_size,

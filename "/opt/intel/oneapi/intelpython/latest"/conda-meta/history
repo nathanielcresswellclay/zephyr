@@ -1,0 +1,4 @@
+==> 2024-01-30 14:22:43 <==
+# cmd: /opt/intel/oneapi/intelpython/latest/bin/conda remove --force pytorch
+# conda version: 4.11.0
+# remove specs: ['pytorch']

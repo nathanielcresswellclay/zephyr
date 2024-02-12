@@ -1,5 +1,12 @@
-_target_: training.dlwp.model.modules.blocks.ConvLSTMBlock
-_recursive_: false
+_target_: training.dlwp.model.modules.blocks.ConvLSTMBlock.ConvLSTMBlock
+geometry_layer: training.dlwp.model.modules.healpix.HEALPixLayer
 in_channels: 3
-kernel_size: 1
+out_channels: 1
+latent_channels: 1
+kernel_size: 3
 downscale_factor: 4
+upscale_factor: 4
+dilation: 1
+activation: null  # Specify your activation function here, or null for no activation
+enable_nhwc: false
+enable_healpixpad: false
