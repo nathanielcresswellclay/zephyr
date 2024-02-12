@@ -1,2 +1,2 @@
-_target_: training.dlwp.model.modules.blocks.MaxPool
+_target_: training.dlwp.model.modules.blocks.pool.MaxPool
 pooling: 2
