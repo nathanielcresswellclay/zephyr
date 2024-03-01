@@ -11,7 +11,7 @@ import pandas as pd
 from training.dlwp.model.modules.healpix import HEALPixPadding, HEALPixLayer
 from training.dlwp.model.modules.encoder import UNetEncoder, UNet3Encoder
 from training.dlwp.model.modules.decoder import UNetDecoder, UNet3Decoder
-from training.dlwp.model.modules.blocks import FoldFaces, UnfoldFaces
+from training.dlwp.model.modules.blocks.fold import FoldFaces, UnfoldFaces
 from training.dlwp.model.modules.losses import LossOnStep
 from training.dlwp.model.modules.utils import Interpolate
 from training.dlwp.model.models.unet3plus import HEALPixUNet3Plus

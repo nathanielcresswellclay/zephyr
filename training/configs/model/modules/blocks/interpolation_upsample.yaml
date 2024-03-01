@@ -1,2 +1,2 @@
-_target_: training.dlwp.model.modules.blocks.InterpolationUpsample
+_target_: training.dlwp.model.modules.blocks.interpolate.InterpolationUpsample
 upsampling: 2
