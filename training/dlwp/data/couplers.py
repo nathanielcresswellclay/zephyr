@@ -256,7 +256,7 @@ class TrailingAverageCoupler():
         for b in range(self.batch_size):
             for i in range(self.coupled_integration_dim):
                 
-                self._coupled_offsets[b,i,:] = b+((self.input_time_dim*i)+1)*interval+\
+                self._coupled_offsets[b,i,:] = b+((self.input_time_dim*i))*interval+\
                     np.array([ts/data_time_step for ts in self.input_times])
 
         self._coupled_offsets = self._coupled_offsets.astype(int)
