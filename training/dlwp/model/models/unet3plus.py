@@ -8,8 +8,7 @@ import numpy as np
 import torch
 import pandas as pd
 
-from training.dlwp.model.modules.blocks import FoldFaces, UnfoldFaces
-from training.dlwp.model.modules.blocks import FoldFaces, UnfoldFaces
+from training.dlwp.model.modules.blocks.fold import FoldFaces, UnfoldFaces
 from training.dlwp.model.modules.losses import LossOnStep
 from training.dlwp.model.modules.utils import Interpolate
 from training.dlwp.model.modules.healpix import HEALPixPadding, HEALPixLayer

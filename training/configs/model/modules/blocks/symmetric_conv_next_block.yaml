@@ -1,7 +1,7 @@
 defaults:
   - /model/modules/activations@activation: capped_gelu
 
-_target_: training.dlwp.model.modules.blocks.SymmetricConvNeXtBlock
+_target_: training.dlwp.model.modules.blocks.SymmetricConvNeXtBlock.SymmetricConvNeXtBlock
 _recursive_: true
 in_channels: 3
 out_channels: 1
