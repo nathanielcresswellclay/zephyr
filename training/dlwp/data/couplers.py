@@ -295,29 +295,37 @@ class TrailingAverageCoupler():
     def setup_coupling(self, coupled_module):
 
         # To expediate the coupling process the coupled_forecast
-        # get proper channels from coupled component output 
+        # get proper channels from coupled component output
         output_channels = coupled_module.output_variables
-        channel_indices = []
-        # Prepared coupled variables 
-        # are given a suffix for training associated with their 
-        # trailing average increment e.g. 'z1000-48H'. To extract 
-        # thr proper field from the coupled model output, we see if 
-        # we check if the coupled model output var is in self.variables. 
-        # 
+        # A bit convoluted. Prepared coupled variables
+        # are given a suffix for training associated with their
+        # trailing average increment e.g. 'z1000-48H'. To extract
+        # thr proper field from the coupled model output, we see if
+        # we check if the coupled model output var is in self.variables.
+        #
         # for example 'z1000' is in 'z1000-48H'
-        for i, oc in enumerate(output_channels):
-            for v in self.variables: 
-                if oc in v:
-                    channel_indices.append(i) 
+        channel_indices = [
+            i for i, oc in enumerate(output_channels) for v in self.variables if oc in v
+        ]
         self.coupled_channel_indices = channel_indices
-        
-        # find averaging periods from componenet output  
-        averaging_window_max_indices = [i //pd.Timedelta(coupled_module.time_step) for i in self.input_times]
+
+        # find averaging periods from componenet output
+        averaging_window_max_indices = [
+            i // pd.Timedelta(coupled_module.time_step) for i in self.input_times
+        ]
         di = averaging_window_max_indices[0]
+        # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
         averaging_slices = []
-        for i,r in enumerate(averaging_window_max_indices):
-             averaging_slices.append(slice(i*di,r))
-        self.averaging_slices=averaging_slices
+        for j in range(self.coupled_integration_dim):
+            averaging_slices.append([])
+            for i, r in enumerate(averaging_window_max_indices):
+                averaging_slices[j].append(
+                    slice(
+                        self.input_time_dim * j * di + i * di,
+                        self.input_time_dim * j * di + r,
+                    )
+                )
+        self.averaging_slices = averaging_slices
         
     
     def reset_coupler(self):
@@ -328,13 +336,20 @@ class TrailingAverageCoupler():
 
     def set_coupled_fields(self, coupled_fields):
         
-        coupled_fields = coupled_fields[:,:,:,self.coupled_channel_indices,:,:]
-        averaging_periods = [] 
-        for s in self.averaging_slices:
-            averaging_periods.append(coupled_fields[:,:,s,:,:,:].mean(dim=2,keepdim=True))
-        self.preset_coupled_fields = th.concat(averaging_periods, dim=3).permute(2,0,3,1,4,5)
+        coupled_fields = coupled_fields[:, :, :, self.coupled_channel_indices, :, :]
+        # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
+        coupled_averaging_periods = []
+        for j in range(self.coupled_integration_dim):
+            averaging_periods = [
+                coupled_fields[:, :, s, :, :, :].mean(dim=2, keepdim=True)
+                for s in self.averaging_slices[j]
+            ]
+            coupled_averaging_periods.append(th.concat(averaging_periods, dim=3))
+        self.preset_coupled_fields = th.concat(
+            coupled_averaging_periods, dim=2
+        ).permute(2, 0, 3, 1, 4, 5)
         # flag for construct integrated coupling method to use this array
-        self.coupled_mode = True 
+        self.coupled_mode = True
 
     def construct_integrated_couplings(self, batch=None, bsize=None,):
         
